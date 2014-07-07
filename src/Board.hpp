@@ -472,14 +472,16 @@ template<SearchMode mode, color plr> inline void Board::searchDeeper(int alpha, 
 		score = -search<mode, plr, false>(-beta, -alpha, depth - 1);
 	} else if (mode == PV){
 		if (pvFound) {
-			if (!(board_interface->search(this, thread_id, depth, alpha, beta, move_entry))){
+			if (depth > 5 && board_interface->search(this, thread_id, depth, alpha, beta, move_entry)){
+				score = alpha;
+			} else {
 				board_interface->increaseDepth(thread_id);
 				score = -search<ZW, plr, false>(-1-alpha, -alpha, depth - 1);
 				if ( score > alpha ) {
 					score = -search<PV, plr, false>(-beta, -alpha, depth - 1);
 				}
 				board_interface->decreaseDepth(thread_id);
-			} else score = alpha;
+			}
 		} else {
 			score = -search<PV, plr, false>(-beta, -alpha, depth - 1);
 		}

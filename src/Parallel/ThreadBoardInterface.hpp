@@ -17,7 +17,7 @@
 
 constexpr unsigned int thread_pop(8);
 constexpr unsigned int UI_index(thread_pop+1);
-constexpr unsigned int task_pop(8); // per thread
+constexpr unsigned int task_pop(16); // per thread
 constexpr unsigned int thrd_id_offset(16);
 constexpr unsigned int thr_task_mask((1 << task_pop) - 1);
 
