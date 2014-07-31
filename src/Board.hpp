@@ -324,9 +324,11 @@ class Board { //cache_align
 		template<color plr> bool stalemate() __restrict;
 		void assert_state() const __restrict;
 
+public:
 		static constexpr bitboard bishopAttacks(bitboard occ, const int sq);
 		static constexpr bitboard rookAttacks(bitboard occ, const int sq);
 		static constexpr bitboard queenAttacks(bitboard occ, const int sq);
+private:
 		template<color plr> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict;
 		template<color plr> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
 		template<color plr> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
@@ -342,6 +344,8 @@ class Board { //cache_align
 
 		bool threefoldRepetition() __restrict;
 };
+
+template<Piece p> inline __attribute__((always_inline)) constexpr bitboard attacks(bitboard occ, const int sq);
 
 inline internal_move::internal_move(bitboard tf, unsigned int prom): tf(tf), prom(prom){ }
 
@@ -391,9 +395,8 @@ inline void Board::togglePlaying() __restrict{
 
 template<color plr> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq) __restrict{
 	ASSUME(kingSq >= 0 && kingSq < 64);
-	bitboard attackers = KnightMoves[kingSq];
-	attackers &= Pieces[KNIGHT | (!plr)];
-	attackers |= rookAttacks(occ, kingSq) & (Pieces[ROOK | (!plr)] | Pieces[QUEEN | (!plr)]);
+	bitboard attackers = KnightMoves[kingSq] & Pieces[KNIGHT | (!plr)];
+	attackers |= rookAttacks  (occ, kingSq) & (Pieces[ROOK   | (!plr)] | Pieces[QUEEN | (!plr)]);
 	attackers |= bishopAttacks(occ, kingSq) & (Pieces[BISHOP | (!plr)] | Pieces[QUEEN | (!plr)]);
 	if (plr == black){
 		attackers |= (((Pieces[KING | plr] >> 7) & notfile7) | ((Pieces[KING | plr] >> 9) & notfile0)) & Pieces[PAWN | white];
@@ -420,18 +423,18 @@ template<color plr> inline bool Board::notAttacked(bitboard target, bitboard occ
 	ASSUME((target & (target-1))==0);
 	ASSUME(targetSq >= 0 && targetSq < 64);
 	if (plr == black){
-		if ( ( (Pieces[PAWN | black] >> 7) & target & notfile7) != 0) return false;
-		if ( ( (Pieces[PAWN | black] >> 9) & target & notfile0) != 0) return false;
+		if ( (Pieces[PAWN | black] >> 7) & target & notfile7) return false;
+		if ( (Pieces[PAWN | black] >> 9) & target & notfile0) return false;
 	} else {
-		if ( ( (Pieces[PAWN | white] << 7) & target & notfile0) != 0) return false;
-		if ( ( (Pieces[PAWN | white] << 9) & target & notfile7) != 0) return false;
+		if ( (Pieces[PAWN | white] << 7) & target & notfile0) return false;
+		if ( (Pieces[PAWN | white] << 9) & target & notfile7) return false;
 	}
-	if ((Pieces[KNIGHT | plr] & KnightMoves[targetSq])!=0) return false;
-	if ((Pieces[KING | plr] & KingMoves[targetSq])!=0) return false;
+	if (Pieces[KNIGHT | plr] & KnightMoves[targetSq]) return false;
+	if (Pieces[KING   | plr] & KingMoves[targetSq]  ) return false;
 	bitboard att = Pieces[BISHOP | plr] | Pieces[QUEEN | plr];
-	if ((att & bishopAttacks(occ, targetSq)) != 0) return false;
+	if (att & bishopAttacks(occ, targetSq)) return false;
 	att = Pieces[ROOK | plr] | Pieces[QUEEN | plr];
-	return ((att & rookAttacks(occ, targetSq)) == 0ull);
+	return !(att & rookAttacks(occ, targetSq));
 }
 
 template<color plr> inline bool Board::validPosition(bitboard occ, int kingSq) __restrict{
@@ -614,7 +617,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	enPassant = bitboard(0);
 	halfmoves = 0;
 
-	if (root) std::cout << "hereD" << std::endl;
+	// if (root) std::cout << "hereD" << std::endl;
 
 	// if (!root) {
 	// 	playing = plr;
@@ -1644,7 +1647,6 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 								};
 
 								internal_move smove(tf, prom);
-
 								if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, Value::piece[prom], toggleGroupMove, Value::piece[attacker]+Value::piece[PAWN | plr])) return sst.score;
 							}
 							togglePartial3Move();
@@ -2280,22 +2282,19 @@ template<color plr> inline int Board::getMove(bitboard tf, int prom) __restrict{
 }
 
 template<color plr> bool Board::stalemate() __restrict{
-	bitboard occ = All_Pieces(white);
-	occ |= All_Pieces(black);
+	bitboard occ = All_Pieces(white) | All_Pieces(black);
 	bitboard empty = ~occ;
 	bitboard moving = empty;
-	bool res = false;
 	if (plr==white){
 		moving &= Pieces[PAWN | plr] << 8;
 	} else {
 		moving &= Pieces[PAWN | plr] >> 8;
 	}
 	bitboard moving2 = moving;
-	bitboard to, tf;
 	unsigned long int kingSq = square(Pieces[KING | plr]);
 	while (moving){
-		to = pop_lsb(moving);
-		tf = to | ((plr == white) ? (to >> 8) : (to << 8));
+		bitboard to = pop_lsb(moving);
+		bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
 		if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 	}
 	if (plr==white){
@@ -2307,8 +2306,8 @@ template<color plr> bool Board::stalemate() __restrict{
 	}
 	moving2 &= empty;
 	while (moving2){
-		to = pop_lsb(moving2);
-		tf = to | ((plr == white) ? (to >> 16) : (to << 16));
+		bitboard to = pop_lsb(moving2);
+		bitboard tf = to | ((plr == white) ? (to >> 16) : (to << 16));
 		if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 	}
 	bitboard from = Pieces[KING | plr];
@@ -2316,23 +2315,17 @@ template<color plr> bool Board::stalemate() __restrict{
 	moving = empty & att;
 	occ ^= from;
 	while (moving){
-		to = pop_lsb(moving);
-		if (notAttacked<!plr>(to, occ^to, square(to))) {
-			occ ^= from;
-			return false;
-		}
+		bitboard to = pop_lsb(moving);
+		if (notAttacked<!plr>(to, occ^to, square(to))) return false;
 	}
 	for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 		moving = Pieces[captured] & att;
 		while (moving){
-			to = pop_lsb(moving);
+			bitboard to = pop_lsb(moving);
 			Pieces[captured] ^= to;
-			res = notAttacked<!plr>(to, occ, square(to));
+			bool res = notAttacked<!plr>(to, occ, square(to));
 			Pieces[captured] ^= to;
-			if (res) {
-				occ ^= from;
-				return false;
-			}
+			if (res) return false;
 		}
 	}
 	occ ^= from;
@@ -2342,16 +2335,16 @@ template<color plr> bool Board::stalemate() __restrict{
 		att = KnightMoves[square(from)];
 		moving = empty & att;
 		while (moving){
-			to = pop_lsb(moving);
-			tf = to | from;
+			bitboard to = pop_lsb(moving);
+			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
 			while (moving){
-				to = pop_lsb(moving);
+				bitboard to = pop_lsb(moving);
 				Pieces[captured] ^= to;
-				res = validPosition<plr>(occ ^ from, kingSq);
+				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
@@ -2363,16 +2356,16 @@ template<color plr> bool Board::stalemate() __restrict{
 		att = bishopAttacks(occ, square(from));
 		moving = empty & att;
 		while (moving){
-			to = pop_lsb(moving);
-			tf = to | from;
+			bitboard to = pop_lsb(moving);
+			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
 			while (moving){
-				to = pop_lsb(moving);
+				bitboard to = pop_lsb(moving);
 				Pieces[captured] ^= to;
-				res = validPosition<plr>(occ ^ from, kingSq);
+				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
@@ -2384,16 +2377,16 @@ template<color plr> bool Board::stalemate() __restrict{
 		att = rookAttacks(occ, square(from));
 		moving = empty & att;
 		while (moving){
-			to = pop_lsb(moving);
-			tf = to | from;
+			bitboard to = pop_lsb(moving);
+			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
 			while (moving){
-				to = pop_lsb(moving);
+				bitboard to = pop_lsb(moving);
 				Pieces[captured] ^= to;
-				res = validPosition<plr>(occ ^ from, kingSq);
+				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
@@ -2405,22 +2398,22 @@ template<color plr> bool Board::stalemate() __restrict{
 		att = queenAttacks(occ, square(from));
 		moving = empty & att;
 		while (moving){
-			to = pop_lsb(moving);
-			tf = to | from;
+			bitboard to = pop_lsb(moving);
+			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
 			while (moving){
-				to = pop_lsb(moving);
+				bitboard to = pop_lsb(moving);
 				Pieces[captured] ^= to;
-				res = validPosition<plr>(occ ^ from, kingSq);
+				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
 		}
 	}
-	bitboard attacking[2], attc;
+	bitboard attacking[2];
 	if (plr==white){
 		attacking[0] = notfile0 & (Pieces[PAWN | plr] << 7);
 		attacking[1] = notfile7 & (Pieces[PAWN | plr] << 9);
@@ -2430,13 +2423,12 @@ template<color plr> bool Board::stalemate() __restrict{
 	}
 	for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
 		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-			attc = attacking[at] & Pieces[captured];
+			bitboard attc = attacking[at] & Pieces[captured];
 			while (attc){
-				to = pop_lsb(attc);
+				bitboard to = pop_lsb(attc);
 				from = (plr == white) ? (to >> diff) : (to << -diff);
-				tf = to | from;
 				Pieces[captured] ^= to;
-				res = validPosition<plr>(occ ^ from, kingSq);
+				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
@@ -2454,7 +2446,7 @@ template<color plr> bool Board::stalemate() __restrict{
 			from = pop_lsb(moving);
 			cpt = (plr == white) ? (enPassant >> 8) : (enPassant << 8);
 			Pieces[PAWN | (!plr)] ^= cpt;
-			res = validPosition<plr>(occ ^ cpt ^ from ^ enPassant, kingSq);
+			bool res = validPosition<plr>(occ ^ cpt ^ from ^ enPassant, kingSq);
 			Pieces[PAWN | (!plr)] ^= cpt;
 			if (res) return false;
 		}
@@ -2620,6 +2612,22 @@ inline void Board::assert_state() const __restrict{
 	ASSUME(score == this->pieceScore);
 	ASSUME(z == zobr);
 #endif
+}
+
+template<> inline __attribute__((always_inline)) constexpr bitboard attacks<KNIGHT>(bitboard occ, const int sq){
+	return KnightMoves[sq];        
+}
+
+template<> inline __attribute__((always_inline)) constexpr bitboard attacks<BISHOP>(bitboard occ, const int sq){
+	return Board::bishopAttacks(occ, sq); 
+}
+
+template<> inline __attribute__((always_inline)) constexpr bitboard attacks<ROOK  >(bitboard occ, const int sq){
+	return Board::rookAttacks  (occ, sq); 
+}
+
+template<> inline __attribute__((always_inline)) constexpr bitboard attacks<QUEEN >(bitboard occ, const int sq){
+	return Board::queenAttacks (occ, sq); 
 }
 
 inline time_td get_current_time();
