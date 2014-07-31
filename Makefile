@@ -170,8 +170,9 @@ space+=
 vpath %.o $(subst $(space),:,$(dir $(OBJ_FILES)))
 vpath %.cpp $(subst $(space),:,$(dir $(CXX_SOURCESD)))
 
-%.dir:
-	mkdir -p $(@D)
+
+$(sort $(subst //,/,$(dir $(OBJ_FILES)))):
+	mkdir -p $@
 
 %.o: 
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(subst $(OBJ_DIR),$(SRC_ROOT)/,$(@:.o=.cpp)) -o $@
@@ -186,9 +187,8 @@ clean:
 
 $(DEP_DBG)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
-	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): \\\nMakefile $(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.dir)))\\\n/g' > $@
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DDD)$(subst /,\/,$(<:.cpp=.d)): \\\n Makefile \\\n/g' | sed -r 's/(\w)\s+(\w)/\1 \\\n \2/g' | sed '$$s/$$/\\\n | $(SED_ODD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(dir $<)))/g' | sed -r 's/(\w)+\/\.\.\///g' | awk '!x[$$0]++' > $@
 
 $(DEP_RLS)%.d: %.cpp Makefile
 	@mkdir -p $(@D)
-	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DRD)$(subst /,\/,$(<:.cpp=.d)): \\\nMakefile $(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.dir)))\\\n/g' > $@
-
+	$(CXX) -MM $(CPPFLAGS) $(CXXFLAGS) $< | sed -r 's/^(\S+).(\S+):/$(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(<:.cpp=.o))) $(SED_DRD)$(subst /,\/,$(<:.cpp=.d)): \\\n Makefile \\\n/g' | sed -r 's/(\w)\s+(\w)/\1 \\\n \2/g' | sed '$$s/$$/\\\n | $(SED_ORD)$(subst /,\/,$(subst $(SRC_ROOT)/,,$(dir $<)))/g' | sed -r 's/(\w)+\/\.\.\///g' | awk '!x[$$0]++' > $@
