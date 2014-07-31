@@ -1,5 +1,5 @@
 /**
- * TimeManager.hpp
+ * ThreadBoardInterface.hpp
  *
  *  Created on: 2014/06/22
  *      Author: Chrysogelos Periklis
