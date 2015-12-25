@@ -742,7 +742,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				} else {
 					int promSp = getTTMove_Prom_spec(killerMove);
-					int toPiece = getTTMove_fromPS_P(promSp);
+					unsigned int toPiece = getTTMove_fromPS_P(promSp);
 					if ((toPiece & colormask) == plr){
 						int diff = killerToSq - killerFromSq;
 						bitboard tf = killerFrom ^ killerTo;
@@ -837,6 +837,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	//TODO add heuristics
 	bitboard checkedBy = kingIsAttackedBy<plr>(occ, kingSq);
 
+    constexpr int opCapturables[] = {QUEEN | !plr, ROOK | !plr, BISHOP | !plr, KNIGHT | !plr, PAWN | !plr};
+    constexpr int promo[]         = {QUEEN |  plr, ROOK |  plr, BISHOP |  plr, KNIGHT |  plr};
 	if (!checkedBy){
 		bitboard nPinnedPawn = getNPinnedPawns<plr>(occ, kingSq);
 		bitboard attacking[2] = {Pieces[PAWN | plr], Pieces[PAWN | plr]};
@@ -862,10 +864,11 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			attacking[1] &= notfile7 & lastRank_b;
 		}
 
-		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
+		for (int captured : opCapturables){
 			int scoreD = - Value::piece[PAWN | plr] - Value::piece[captured];
-			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-				bitboard tmp = attacking[at] & Pieces[captured];
+            int diff = (plr==white) ? 7 : -9;
+			for (bitboard attacktarget: attacking){
+				bitboard tmp = attacktarget & Pieces[captured];
 
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
@@ -885,7 +888,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					};
 
 					toggleGroupMove();
-					for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
+					for (int prom: promo){
 						scoreD += Value::piece[prom];
 
 						auto toggleMove = [this, toggle, prom, to, toSq](){
@@ -901,6 +904,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 					toggleGroupMove();
 				}
+
+                diff += 2;
 			}
 		}
 
@@ -921,11 +926,13 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			attacking[1] &= notfile7 & notlastRank_b;
 		}
 
-		for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
-			int scoreGD = Value::piece[captured];
-			pieceScore -= scoreGD;
-			for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-				bitboard tmp = attacking[at] & Pieces[captured];
+        for (int captured : opCapturables){
+            int scoreGD = Value::piece[captured];
+            pieceScore -= scoreGD;
+
+            int diff = (plr==white) ? 7 : -9;
+            for (bitboard attacktarget: attacking){
+				bitboard tmp = attacktarget & Pieces[captured];
 				while (tmp){
 					bitboard to = pop_lsb(tmp);
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
@@ -947,12 +954,15 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, scoreGD)) return sst.score;
 				}
+
+                diff += 2;
 			}
 			pieceScore += scoreGD;
 		}
 
-		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-			if ((attacking[at] & tmpEnPassant) != 0){
+        int diff = (plr==white) ? 7 : -9;
+        for (bitboard attacktarget: attacking){
+			if ((attacktarget & tmpEnPassant) != 0){
 				bitboard tf = tmpEnPassant;
 				bitboard cp = tmpEnPassant;
 				if (plr == white){
@@ -977,6 +987,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				internal_move smove(tf,  PAWN | plr | TTMove_EnPassantPromFlag);
 				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[PAWN | (!plr)], [](){}, 0)) return sst.score;
 			}
+            diff += 2;
 		}
 
 		bitboard empty = ~occ;
@@ -1004,7 +1015,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				};
 
 				toggleGroupMove();
-				for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
+				for (int prom: promo){
 
 					auto toggleMove = [this, prom, toSq, to](){
 						Pieces[prom] ^= to;
@@ -1091,7 +1102,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		//attack[n] = KingMoves[kingSq[plr]]; KAttack
 		//n : position of last bitboard generated
 		if (!(castling & castlingrights[plr])){
-			for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
+			for (int captured: opCapturables){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
 					bitboard tmp = Pieces[captured] & dt[i].attack;
@@ -1198,7 +1209,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			}
 		} else {
 			key ct = zobrist::castling[(castling*castlingsmagic)>>60];
-			for (int captured = QUEEN | (!plr); captured >= 0 ; captured -= 2){
+			for (int captured: opCapturables){
 				unsigned int i = 0;
 				pieceScore -= Value::piece[captured];
 				for (; i < firstRook ; ++i) {
@@ -1640,7 +1651,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 							pieceScore -= Value::piece[PAWN | plr];
 							togglePartial3Move();
-							for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
+							for (int prom: promo){
 								auto toggleMove = [this, toSq, prom, checkedBy](){
 									Pieces[prom] ^= checkedBy;
 									zobr         ^= zobrist::keys[prom][toSq];
@@ -1936,7 +1947,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 						togglePartial2Move();
 					};
 					pieceScore -= Value::piece[PAWN | plr];
-					for (int prom = QUEEN | plr; prom > (PAWN | colormask) ; prom -= 2){
+					for (int prom: promo){
 						auto toggleMove = [this, prom, toSq, to](){
 							Pieces[prom] ^= to;
 							zobr         ^= zobrist::keys[prom][toSq];
@@ -2103,7 +2114,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		key ct = zobrist::castling[(castling*castlingsmagic)>>60];
 		bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 		ct ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
-		for (int attacker = QUEEN | (!plr); attacker >= 0 ; attacker -= 2){
+		for (int attacker: opCapturables){
 			bitboard tmp = Pieces[attacker] & tmp1;
 			while (tmp){
 				bitboard to = pop_lsb(tmp);
