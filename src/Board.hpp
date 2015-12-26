@@ -328,11 +328,13 @@ public:
 		static constexpr bitboard bishopAttacks(bitboard occ, const int sq);
 		static constexpr bitboard rookAttacks(bitboard occ, const int sq);
 		static constexpr bitboard queenAttacks(bitboard occ, const int sq);
+
+
 private:
 		template<color plr> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict;
 		template<color plr> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
 		template<color plr> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
-		template<color plr> int getMove(bitboard tf, int prom) __restrict;
+		template<color plr> unsigned int getMove(bitboard tf, int prom) __restrict;
 
 		template<SearchMode mode, color plr, bool root> void prepare_beta_cutoff(int oldhm, bitboard old_enpassant, const internal_move& move_entry, int depth, int beta) __restrict;
 
@@ -455,6 +457,37 @@ template<color plr> inline bool Board::validPositionNonChecked(bitboard occ, int
 template<color plr> inline bool Board::validPositionNonChecked(int kingSq) __restrict{
 	return validPositionNonChecked<plr>(All_Pieces(white) | All_Pieces(black), kingSq);
 }
+
+class squares{
+private:
+    bitboard val;
+public:
+    inline constexpr squares(bitboard v): val(v){}
+
+    class const_iterator {
+    private:
+        bitboard val;
+    public:
+        typedef std::input_iterator_tag iterator_category;
+        
+        inline constexpr const_iterator(): val(0){}
+        inline constexpr const_iterator(bitboard v): val(v){}
+        inline constexpr const_iterator(const const_iterator& it): val(it.val){}
+
+        inline const_iterator& operator=(const const_iterator& it){ val = it.val; return *this;}
+        inline constexpr bool operator==(const const_iterator& it) const{return val == it.val;}
+        inline constexpr bool operator!=(const const_iterator& it) const{return val != it.val;}
+
+        inline const_iterator& operator++(){ val &= (val-1); return *this;}
+
+        inline constexpr bitboard operator*() const{ return val & -val; }
+        // const_pointer operator->() const{ return }
+    };
+
+    inline constexpr const_iterator begin() const{return const_iterator(val);}
+    inline constexpr const_iterator end() const{return const_iterator();}
+};
+
 
 /**
  * uses only :
@@ -870,8 +903,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			for (bitboard attacktarget: attacking){
 				bitboard tmp = attacktarget & Pieces[captured];
 
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(tmp)){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
 					unsigned long int toSq = square(to);
@@ -933,8 +965,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
             int diff = (plr==white) ? 7 : -9;
             for (bitboard attacktarget: attacking){
 				bitboard tmp = attacktarget & Pieces[captured];
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(tmp)){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
 					bitboard tf = to | from;
 					unsigned long int toSq = square(to);
@@ -1002,8 +1033,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			}
 			tmp &= empty;
 			pieceScore -= Value::piece[PAWN | plr];
-			while (tmp){
-				bitboard to = pop_lsb(tmp);
+            for (const bitboard& to: squares(tmp)){
 				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
 				bitboard tf = to | from;
 				unsigned long int toSq = square(to);
@@ -1044,15 +1074,13 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		static_assert(sizeof(move_data) == 128/8, "move_data size");
 		unsigned long int n(0);
 #undef SIZE
-		bitboard KAttack = KingMoves[kingSq];
+
 		unsigned long int firstRook, firstQueen;
 		{ 												//TargetSquareGenerator:
-			bitboard tmp = Pieces[KNIGHT | plr];
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
-			while (tmp){
+            for (const bitboard& frombb: squares(Pieces[KNIGHT | plr])){
+                dt[n].fromSq = square(frombb);
 				bitboard xRay;
-				bitboard frombb = pop_lsb(tmp);
-				dt[n].fromSq = square(frombb);
 				int dr = direction[kingSq][dt[n].fromSq];
 				//A pinned knight has no legal moves.
 				if (dr == WRONG_PIECE || (rays[kingSq][dt[n].fromSq] & occ) != 0 ||
@@ -1067,9 +1095,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			//Also a bishop can only move if he is pinned by a queen or bishop, if he is pinned
 			//a rook can only move if he is pinned by a queen or rook, if he is pinned
 			//the pinner will be capturable by the pinned piece!
-			tmp = Pieces[BISHOP | plr];
-			while (tmp){
-				bitboard frombb = pop_lsb(tmp);
+			for (const bitboard& frombb: squares(Pieces[BISHOP | plr])){
 				dt[n].fromSq = square(frombb);
 				dt[n].attack = bishopAttacks(occ, dt[n].fromSq);
 				dt[n].piecet = BISHOP | plr;
@@ -1077,9 +1103,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				++n;
 			}
 			firstRook = n;
-			tmp = Pieces[ROOK | plr];
-			while (tmp){
-				bitboard frombb = pop_lsb(tmp);
+            for (const bitboard& frombb: squares(Pieces[ROOK | plr])){
 				dt[n].fromSq = square(frombb);
 				dt[n].attack = rookAttacks(occ, dt[n].fromSq);
 				dt[n].piecet = ROOK | plr;
@@ -1087,9 +1111,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				++n;
 			}
 			firstQueen = n;
-			tmp = Pieces[QUEEN | plr];
-			while (tmp){
-				bitboard frombb = pop_lsb(tmp);
+            for (const bitboard& frombb: squares(Pieces[QUEEN | plr])){
 				dt[n].fromSq = square(frombb);
 				dt[n].attack = queenAttacks(occ, dt[n].fromSq);
 				dt[n].piecet = QUEEN | plr;
@@ -1097,6 +1119,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				++n;
 			}
 		}
+        bitboard KAttack = KingMoves[kingSq];
 		//frombb[n] = Pieces[KING | plr];
 		//fromSq[n] = kingSq[plr];//square(frombb[n]);
 		//attack[n] = KingMoves[kingSq[plr]]; KAttack
@@ -1105,10 +1128,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			for (int captured: opCapturables){
 				pieceScore -= Value::piece[captured];
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					bitboard tmp = Pieces[captured] & dt[i].attack;
 					unsigned int fromSq = dt[i].fromSq;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						unsigned int mpiece = dt[i].piecet;
@@ -1129,9 +1150,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
 					}
 				}
-				bitboard tmp = Pieces[captured] & KAttack;
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(Pieces[captured] & KAttack)){
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
 
@@ -1162,10 +1181,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
 				for (unsigned long int i = 0 ; i < n ; ++i) {
-					bitboard tmp = dt[i].attack & empty;
 					unsigned int fromSq = dt[i].fromSq;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(dt[i].attack & empty)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						unsigned int mpiece = dt[i].piecet;
@@ -1182,9 +1199,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 					}
 				}
-				bitboard tmp = KAttack & empty;
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(KAttack & empty)){
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
 
@@ -1213,10 +1228,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				unsigned int i = 0;
 				pieceScore -= Value::piece[captured];
 				for (; i < firstRook ; ++i) {
-					bitboard tmp = Pieces[captured] & dt[i].attack;
 					unsigned int fromSq = dt[i].fromSq;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						unsigned int mpiece = dt[i].piecet;
@@ -1247,10 +1260,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					};
 
 					toggleGroupMove();
-
-					bitboard tmp = Pieces[captured] & dt[i].attack;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
@@ -1272,9 +1282,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				for (; i < n ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
-					bitboard tmp = Pieces[captured] & dt[i].attack;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[captured][toSq];
@@ -1295,9 +1303,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
-				bitboard tmp = Pieces[captured] & KAttack;
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(Pieces[captured] & KAttack)){
 					unsigned long int nkSq = square(to);
 					bitboard tf = to | Pieces[KING | plr];
 
@@ -1385,9 +1391,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				unsigned int i = 0;
 				for (; i < firstRook ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
-					bitboard tmp = dt[i].attack & empty;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(dt[i].attack & empty)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						unsigned int mpiece = dt[i].piecet;
@@ -1414,9 +1418,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 						castling ^= toggleCastling;
 					};
 					toggleGroupMove();
-					bitboard tmp = dt[i].attack & empty;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(dt[i].attack & empty)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[ROOK | plr][toSq];
@@ -1435,9 +1437,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				for (; i < n ; ++i) {
 					unsigned int fromSq = dt[i].fromSq;
-					bitboard tmp = dt[i].attack & empty;
-					while (tmp){
-						bitboard to = pop_lsb(tmp);
+                    for (const bitboard& to: squares(dt[i].attack & empty)){
 						bitboard tf = to | (UINT64_C(1) << fromSq);
 						unsigned long int toSq = square(to);
 						Zobrist toggle = zobrist::keys[QUEEN | plr][toSq];
@@ -1456,9 +1456,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 				
-				bitboard tmp = KAttack & empty;
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(KAttack & empty)){
 					bitboard tf = to | Pieces[KING | plr];
 					unsigned long int nkSq = square(to);
 
@@ -1496,12 +1494,12 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				tmp &= notlastRank_b;
 			}
 			tmp &= empty;
-			while (tmp){
-				bitboard to = pop_lsb(tmp), tf;
+            for (const bitboard& to: squares(tmp)){
+                bitboard tf = to;
 				if (plr == white){
-					tf = to | (to >> 8);
+					tf |= (to >> 8);
 				} else {
-					tf = to | (to << 8);
+					tf |= (to << 8);
 				}
 				unsigned long int toSq = square(to);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
@@ -1522,8 +1520,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			} else {
 				tmp = ( ( ( ( tmp & pstartRank_b ) >> 8 ) & empty ) >> 8 ) & empty;
 			}
-			while (tmp){
-				bitboard to = pop_lsb(tmp);
+            for (const bitboard& to: squares(tmp)){
 				bitboard toggleEnPassant((plr==white) ? (to >> 8) : (to << 8));
 				bitboard tf(to | ((plr == white) ? (to >> 16) : (to << 16)));
 				unsigned int toSq  = square(to);
@@ -1630,7 +1627,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					bitboard att = (plr == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &=  notFilled::file[f] & Pieces[PAWN | plr];
 					if (att){
-						assert(!(att & (att-1)));
+						ASSUME(!(att & (att-1)));
 						bitboard from = att;
 						bitboard tf = checkedBy | from;
 
@@ -1667,9 +1664,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				}
 			}
-			bitboard tmp = Pieces[KNIGHT | plr] & KnightMoves[toSq];
-			while (tmp){
-				bitboard from = pop_lsb(tmp);
+            for (const bitboard& from: squares(Pieces[KNIGHT | plr] & KnightMoves[toSq])){
 				bitboard tf = from | checkedBy;
 
 				auto togglePartial2Move = [this, tf](){
@@ -1698,9 +1693,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				togglePartial2Move();
 			}
-			tmp = Pieces[BISHOP | plr] & bishopAttacks(occ, toSq);
-			while (tmp){
-				bitboard from = pop_lsb(tmp);
+            for (const bitboard& from: squares(Pieces[BISHOP | plr] & bishopAttacks(occ, toSq))){
 				bitboard tf = from | checkedBy;
 				auto togglePartial2Move = [this, tf](){
 					All_Pieces(plr) ^= tf;
@@ -1727,10 +1720,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				togglePartial2Move();
 			}
-			tmp = Pieces[ROOK | plr] & rookAttacks(occ, toSq);
 			key ct = zobrist::castling[(castling*castlingsmagic)>>60];
-			while (tmp){
-				bitboard from = pop_lsb(tmp);
+            for (const bitboard& from: squares(Pieces[ROOK | plr] & rookAttacks(occ, toSq))){
 				bitboard tf = from | checkedBy;
 				auto togglePartial2Move = [this, tf, ct](){
 					All_Pieces(plr) ^= tf;
@@ -1761,9 +1752,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				}
 				togglePartial2Move();
 			}
-			tmp = Pieces[QUEEN | plr] & queenAttacks(occ, toSq);
-			while (tmp){
-				bitboard from = pop_lsb(tmp);
+            for (const bitboard& from: squares(Pieces[QUEEN | plr] & queenAttacks(occ, toSq))){
 				bitboard tf   = from | checkedBy;
 				auto togglePartial2Move = [this, tf, ct](){
 					All_Pieces(plr) ^= tf;
@@ -1873,7 +1862,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 #endif
 			bitboard tmpP;
 			bitboard tmp2 = Pieces[PAWN | plr];
-			tmp = ray;
+			bitboard tmp = ray;
 			if (plr == white){
 				tmp2 <<= 8;
 				tmp &= tmp2;
@@ -1892,8 +1881,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				tmp2 >>= 8;
 			}
 			tmp2 &= ray;
-			while (tmp2){
-				bitboard to = pop_lsb(tmp2);
+            for (const bitboard& to: squares(tmp2)){
 				bitboard tf = to;
 				bitboard toggleEnPassant;
 				if (plr == white){
@@ -1926,8 +1914,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				toggleGroupMove();
 			}
-			while (tmpP){
-				bitboard to = pop_lsb(tmpP);
+            for (const bitboard& to: squares(tmpP)){
 				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
 				bitboard tf = to | from;
 
@@ -1962,8 +1949,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 				togglePartialMove();
 			}
-			while (tmp){
-				bitboard to = pop_lsb(tmp);
+            for (const bitboard& to: squares(tmp)){
 				bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
 				auto toggleGroupMove = [this, tf](){
 					All_Pieces(plr) ^= tf;
@@ -1986,13 +1972,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				toggleGroupMove();
 			}
 			halfmoves = oldhm + 1;
-			tmpP = Pieces[KNIGHT | plr];
-			while (tmpP){
-				bitboard from = pop_lsb(tmpP);
+            for (const bitboard& from: squares(Pieces[KNIGHT | plr])){
 				unsigned long int fromSq = square(from);
-				tmp = ray & KnightMoves[fromSq];
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(ray & KnightMoves[fromSq])){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
 						All_Pieces(plr) ^= tf;
@@ -2015,13 +1997,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggleGroupMove();
 				}
 			}
-			tmpP = Pieces[BISHOP | plr];
-			while (tmpP){
-				bitboard from = pop_lsb(tmpP);
+            for (const bitboard& from: squares(Pieces[BISHOP | plr])){
 				unsigned long int fromSq = square(from);
-				tmp = ray & bishopAttacks(occ, fromSq);
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(ray & bishopAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
 						All_Pieces(plr) ^= tf;
@@ -2044,15 +2022,11 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggleGroupMove();
 				}
 			}
-			tmpP = Pieces[ROOK | plr];
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
-			while (tmpP){
-				bitboard from = pop_lsb(tmpP);
+            for (const bitboard& from: squares(Pieces[ROOK | plr])){
 				unsigned long int fromSq = square(from);
-				tmp = ray & rookAttacks(occ, fromSq);
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(ray & rookAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
 						All_Pieces(plr) ^= tf;
@@ -2075,13 +2049,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 					toggleGroupMove();
 				}
 			}
-			tmpP = Pieces[QUEEN | plr];
-			while (tmpP){
-				bitboard from = pop_lsb(tmpP);
+            for (const bitboard& from: squares(Pieces[QUEEN | plr])){
 				unsigned long int fromSq = square(from);
-				tmp = ray & queenAttacks(occ, fromSq);
-				while (tmp){
-					bitboard to = pop_lsb(tmp);
+                for (const bitboard& to: squares(ray & queenAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
 						All_Pieces(plr) ^= tf;
@@ -2115,9 +2085,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 		bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 		ct ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 		for (int attacker: opCapturables){
-			bitboard tmp = Pieces[attacker] & tmp1;
-			while (tmp){
-				bitboard to = pop_lsb(tmp);
+            for (const bitboard& to: squares(Pieces[attacker] & tmp1)){
 				kingSq      = square(to);
 				bitboard tf = from | to;
 				auto toggleGroupMove = [this, tf, to, ct, attacker, toggleCastling](){
@@ -2146,10 +2114,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 		}
 		halfmoves = oldhm + 1;
-		bitboard tmp = mv;
-		tmp &= ~occ;
-		while (tmp){
-			bitboard to = pop_lsb(tmp);
+        for (const bitboard& to: squares(mv & ~occ)){
 			bitboard tf = to | from;
 			kingSq      = square(to);
 			auto toggleGroupMove = [this, tf, ct, toggleCastling](){
@@ -2276,7 +2241,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 	return sst.alpha;
 }
 
-template<color plr> inline int Board::getMove(bitboard tf, int prom) __restrict{
+template<color plr> inline unsigned int Board::getMove(bitboard tf, int prom) __restrict{
 	ASSUME(tf != bitboard(0));
 	ASSUME(prom < (TTMove_EnPassantPromFlag << 1));
 	ASSUME((tf & All_Pieces(plr)) != bitboard(0));
@@ -2303,8 +2268,7 @@ template<color plr> bool Board::stalemate() __restrict{
 	}
 	bitboard moving2 = moving;
 	unsigned long int kingSq = square(Pieces[KING | plr]);
-	while (moving){
-		bitboard to = pop_lsb(moving);
+    for (const bitboard& to: squares(moving)){
 		bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
 		if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 	}
@@ -2316,8 +2280,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		moving2 &= dfRank_b;
 	}
 	moving2 &= empty;
-	while (moving2){
-		bitboard to = pop_lsb(moving2);
+    for (const bitboard& to: squares(moving2)){
 		bitboard tf = to | ((plr == white) ? (to >> 16) : (to << 16));
 		if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 	}
@@ -2325,14 +2288,12 @@ template<color plr> bool Board::stalemate() __restrict{
 	bitboard att = KingMoves[square(from)];
 	moving = empty & att;
 	occ ^= from;
-	while (moving){
-		bitboard to = pop_lsb(moving);
+    for (const bitboard& to: squares(moving)){
 		if (notAttacked<!plr>(to, occ^to, square(to))) return false;
 	}
 	for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 		moving = Pieces[captured] & att;
-		while (moving){
-			bitboard to = pop_lsb(moving);
+        for (const bitboard& to: squares(moving)){
 			Pieces[captured] ^= to;
 			bool res = notAttacked<!plr>(to, occ, square(to));
 			Pieces[captured] ^= to;
@@ -2341,8 +2302,7 @@ template<color plr> bool Board::stalemate() __restrict{
 	}
 	occ ^= from;
 	bitboard temp = Pieces[KNIGHT | plr];
-	while (temp){
-		from = pop_lsb(temp);
+    for (const bitboard& from: squares(temp)){
 		att = KnightMoves[square(from)];
 		moving = empty & att;
 		while (moving){
@@ -2366,15 +2326,13 @@ template<color plr> bool Board::stalemate() __restrict{
 		from = pop_lsb(temp);
 		att = bishopAttacks(occ, square(from));
 		moving = empty & att;
-		while (moving){
-			bitboard to = pop_lsb(moving);
+        for (const bitboard& to: squares(moving)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving){
-				bitboard to = pop_lsb(moving);
+            for (const bitboard& to: squares(moving)){
 				Pieces[captured] ^= to;
 				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
@@ -2387,15 +2345,13 @@ template<color plr> bool Board::stalemate() __restrict{
 		from = pop_lsb(temp);
 		att = rookAttacks(occ, square(from));
 		moving = empty & att;
-		while (moving){
-			bitboard to = pop_lsb(moving);
+        for (const bitboard& to: squares(moving)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving){
-				bitboard to = pop_lsb(moving);
+            for (const bitboard& to: squares(moving)){
 				Pieces[captured] ^= to;
 				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
@@ -2404,19 +2360,16 @@ template<color plr> bool Board::stalemate() __restrict{
 		}
 	}
 	temp = Pieces[QUEEN | plr];
-	while (temp){
-		from = pop_lsb(temp);
+    for (const bitboard &from: squares(temp)){
 		att = queenAttacks(occ, square(from));
 		moving = empty & att;
-		while (moving){
-			bitboard to = pop_lsb(moving);
+        for (const bitboard& to: squares(moving)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
 		}
 		for (int captured = QUEEN | (!plr) ; captured >= 0 ; captured -= 2){
 			moving = Pieces[captured] & att;
-			while (moving){
-				bitboard to = pop_lsb(moving);
+            for (const bitboard& to: squares(moving)){
 				Pieces[captured] ^= to;
 				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
@@ -2435,8 +2388,7 @@ template<color plr> bool Board::stalemate() __restrict{
 	for (int captured = QUEEN | (!plr); captured >= 0 ; captured-=2){
 		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
 			bitboard attc = attacking[at] & Pieces[captured];
-			while (attc){
-				bitboard to = pop_lsb(attc);
+            for (const bitboard& to: squares(attc)){
 				from = (plr == white) ? (to >> diff) : (to << -diff);
 				Pieces[captured] ^= to;
 				bool res = validPosition<plr>(occ ^ from, kingSq);
@@ -2453,8 +2405,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		}
 		bitboard cpt;
 		moving &= Pieces[PAWN | plr];
-		while (moving){
-			from = pop_lsb(moving);
+        for (const bitboard& from: squares(moving)){
 			cpt = (plr == white) ? (enPassant >> 8) : (enPassant << 8);
 			Pieces[PAWN | (!plr)] ^= cpt;
 			bool res = validPosition<plr>(occ ^ cpt ^ from ^ enPassant, kingSq);

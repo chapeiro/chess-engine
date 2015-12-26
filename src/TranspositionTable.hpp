@@ -77,7 +77,7 @@ template<SearchState state> inline bool replaceTTEntry(U64 data, int depth){
 
 void ttPreparePVS(chapeiro::zobrist zobr);
 
-template<SearchState state> inline bool addTTEntry(chapeiro::zobrist zobr, int depth, int move, int score){
+template<SearchState state> inline bool addTTEntry(chapeiro::zobrist zobr, int depth, unsigned int move, int score){
 	//if (state > 2) return;
 	if (interruption_requested) return false;
 	int index = getTTIndex(zobr);

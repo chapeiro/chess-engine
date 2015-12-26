@@ -27,7 +27,7 @@ OPTFLAGS+= -DNDEBUG
 
 INCLUDE_PATH=-I. 
 
-CXXFLAGS= -Wl,--no-as-needed -lpthread -pthread -std=c++11 -Wall -D_GNU_SOURCE 
+CXXFLAGS= -Wl,--no-as-needed -lpthread -pthread -std=c++14 -Wall -D_GNU_SOURCE 
 
 CXXFLAGS+= $(INCLUDE_PATH)
 
