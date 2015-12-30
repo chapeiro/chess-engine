@@ -2,6 +2,8 @@ DEBUGFLAGS= -g3 -pg -ggdb
 # DEBUGFLAGS+= -funsafe-loop-optimizations
 # DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
+# CXX = g++-5
+
 TFLAGS= -O3 
 TFLAGS+= -finline 
 TFLAGS+= -funit-at-a-time

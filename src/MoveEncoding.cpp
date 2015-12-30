@@ -13,7 +13,7 @@ chapeiro::move getNullMove(){
 	return n;
 }
 
-chapeiro::move chapeiro::convertUCImove(char m[6]){
+chapeiro::move chapeiro::convertUCImove(const char m[6]){
 	if (m[0]=='0'/**0000**/) return getNullMove();
 	chapeiro::move ret;
 	ret.fromX = m[0]-'a';

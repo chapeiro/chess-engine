@@ -11,15 +11,15 @@
 #include <assert.h>
 #include <iostream>
 
-inline int index(const int &x, const int &y){
+inline constexpr int index(const int &x, const int &y){
 	return (y << 3) | (7 ^ x);
 }
 
-inline int file(const int &index){
+inline constexpr int file(const int &index){
 	return 7 ^ (index & 7);
 }
 
-inline int rank(const int &index){
+inline constexpr int rank(const int &index){
 	return index >> 3;
 }
 
@@ -31,15 +31,15 @@ inline int rank(const int &index){
 		return index;
 	}
 #else
-	inline unsigned int square(unsigned long long int bb){
+	inline constexpr unsigned int square(unsigned long long int bb){
 		return __builtin_ctzll(bb);
 //		return magictable[(b*magic) >> 58];
 	}
-	inline unsigned int square(unsigned long int bb){
+	inline constexpr unsigned int square(unsigned long int bb){
 		return __builtin_ctzl(bb);
 //		return magictable[(b*magic) >> 58];
 	}
-	inline unsigned int square(unsigned int bb){
+	inline constexpr unsigned int square(unsigned int bb){
 		return __builtin_ctz(bb);
 //		return magictable[(b*magic) >> 58];
 	}

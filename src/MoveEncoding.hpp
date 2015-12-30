@@ -45,7 +45,7 @@ namespace chapeiro {
 		}
 	};
 
-	move convertUCImove(char m[6]);
+	move convertUCImove(const char m[6]);
 	bool moveIsNull(move m);
 }
 

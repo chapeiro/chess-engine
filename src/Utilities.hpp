@@ -11,19 +11,19 @@
 
 #ifdef _MSC_VER
     #include <intrin.h>
-inline int popCount(chapeiro::bitboard a){
+inline constexpr int popCount(chapeiro::bitboard a){
 	return _mm_popcnt_u64(a);
 }
 #else
-inline int popCount(unsigned long long int a){
+inline constexpr int popCount(unsigned long long int a){
 	return __builtin_popcountll(a);
 }
 
-inline int popCount(unsigned long int a){
+inline constexpr int popCount(unsigned long int a){
     return __builtin_popcountl(a);
 }
 
-inline int popCount(unsigned int a){
+inline constexpr int popCount(unsigned int a){
     return __builtin_popcount(a);
 }
 #endif

@@ -1,5 +1,5 @@
 /*
- * Board.h
+ * Board.hpp
  *
  * General Board Public Interface
  *
@@ -55,6 +55,7 @@
 
 typedef chapeiro::bitboard bitboard;
 typedef chapeiro::zobrist Zobrist;
+typedef unsigned int square_t;
 
 const std::string PiecesName[] = {"Pawns", "Knights", "Bishops",
 							 "Rooks", "Queens", "Kings"};
@@ -101,22 +102,40 @@ constexpr bitboard dfRank_w = fd_rank(3);//filled::rank[3];
 constexpr bitboard dfRank_b = fd_rank(4);//filled::rank[4];
 constexpr bitboard pstartRank_w = fd_rank(1);//filled::rank[1];
 constexpr bitboard pstartRank_b = fd_rank(6);//filled::rank[6];
-
 //plr definitions
 
 constexpr color white = WHITE;
 constexpr color black = BLACK;
 constexpr int colormask = 1;
 
+template<color plr>
+struct sqmask{
+static constexpr bitboard lastRank      = (plr == white) ? lastRank_w       : lastRank_b;
+static constexpr bitboard notlastRank   = (plr == white) ? notlastRank_w    : notlastRank_b;
+// static constexpr bitboard notfile0 = ~fd_file(0);//notFilled::file[0];
+// static constexpr bitboard notfile7 = ~fd_file(7);//notFilled::file[7];
+static constexpr bitboard dfRank        = (plr == white) ? dfRank_w         : dfRank_b;
+static constexpr bitboard pstartRank    = (plr == white) ? pstartRank_w     : pstartRank_b;
+};
+
+
+// template<color plr> constexpr bitboard lastRank = 0;
+// template<> constexpr bitboard lastRank<white> = lastRank_w;
+// template<> constexpr bitboard lastRank<black> = lastRank_b;
+
+// template<color plr>
+// constexpr bitboard notlastRank = ~lastRank<plr>;
 
 // #define white (0)
 // #define black (1)
 // #define colormask (1)
 
 struct KingException : public std::exception {
-	bool plr;
+	color plr;
 	int number;
-	KingException(bool k, int num) : plr(k), number(num){}
+
+	KingException(color p, int num) : plr(p), number(num){}
+
 	const char* what() const throw() {
 		if (plr == white){
 			return "Invalid number of White Kings.";
@@ -148,23 +167,23 @@ public:
 	static constexpr bitboard KingSideSpace 		= (plr == WHITE) ? 0x0000000000000006ull : 0x0600000000000000ull;
 	static constexpr bitboard QueenSideSpace 		= (plr == WHITE) ? 0x0000000000000070ull : 0x7000000000000000ull;
 	static constexpr bitboard KSCPassing 			= (plr == WHITE) ? 0x0000000000000004ull : 0x0400000000000000ull;
-	static constexpr int KSCPassingSq 				= (plr == WHITE) ? 2 : 58;//square(KSCPassing);
 	static constexpr bitboard QSCPassing 			= (plr == WHITE) ? 0x0000000000000010ull : 0x1000000000000000ull;
-	static constexpr int QSCPassingSq 				= (plr == WHITE) ? 4 : 60;//square(QSCPassing);
-	static constexpr int kingSqBefore 				= (plr == WHITE) ? 3 : 59;
-	static constexpr int kingSqAfterKSC 			= (plr == WHITE) ? 1 : 57;
-	static constexpr int kingSqAfterQSC 			= (plr == WHITE) ? 5 : 61;
 	static constexpr bitboard KSCKT 				= (plr == WHITE) ? 0x000000000000000Aull : 0x0A00000000000000ull;
 	static constexpr bitboard QSCKT 				= (plr == WHITE) ? 0x0000000000000028ull : 0x2800000000000000ull;
 	static constexpr bitboard KSCRT 				= (plr == WHITE) ? 0x0000000000000005ull : 0x0500000000000000ull;
 	static constexpr bitboard QSCRT 				= (plr == WHITE) ? 0x0000000000000090ull : 0x9000000000000000ull;
 	static constexpr bitboard KSCFT 				= (plr == WHITE) ? 0x000000000000000Full : 0x0F00000000000000ull;
 	static constexpr bitboard QSCFT 				= (plr == WHITE) ? 0x00000000000000B8ull : 0xB800000000000000ull;
-	static constexpr bitboard deactrights 			= (plr == WHITE) ? 0xFFFFFFFFFFFFFF7Eull : 0x7EFFFFFFFFFFFFFFull;
+    static constexpr bitboard deactrights           = ~(KingSide | QueenSide);
+    static constexpr square_t KSCPassingSq          = square(KSCPassing);
+    static constexpr square_t QSCPassingSq          = square(QSCPassing);
+    static constexpr square_t kingSqBefore          = square(KSCKT & QSCKT);
+    static constexpr square_t kingSqAfterKSC        = square(KSCKT & ~QSCKT);
+    static constexpr square_t kingSqAfterQSC        = square(QSCKT & ~KSCKT);
 };
 constexpr bitboard castlingsmagic    = 0x1040000000000041ull;//0x8100000000000081ull;
-constexpr bitboard allcastlingrights = 0x8100000000000081ull;
-constexpr bitboard castlingrights[2] = {0x0000000000000081ull, 0x8100000000000000ull};
+constexpr bitboard allcastlingrights = ~castlingc<white>::deactrights | ~castlingc<black>::deactrights;
+constexpr bitboard castlingrights[2] = {~castlingc<white>::deactrights, ~castlingc<black>::deactrights};
 
 #define All_Pieces(x) ((((x)&colormask)==WHITE) ? White_Pieces : Black_Pieces)
 
@@ -244,6 +263,15 @@ class Board { //cache_align
 		HANDLE child_input_write;
 		HANDLE child_output_read;
 #endif
+    struct compressed{
+        bitboard w;
+        bitboard rqnk;
+        bitboard bq;
+        bitboard pk;
+        
+    };
+
+
 
 	private:
 		struct search_state{
@@ -331,8 +359,8 @@ public:
 
 
 private:
-		template<color plr> bitboard getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict;
-		template<color plr> void filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict;
+		template<color plr> bitboard getChecker(bitboard occ, square_t sq, int kingSq) __restrict;
+		template<color plr> void filterAttackBB(bitboard occ, square_t sq, bitboard &attack, int kingSq) __restrict;
 		template<color plr> bitboard getNPinnedPawns(bitboard occ, int kingSq) __restrict;
 		template<color plr> unsigned int getMove(bitboard tf, int prom) __restrict;
 
@@ -865,7 +893,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 	}
 #endif
 #endif
-	unsigned long int kingSq = square(Pieces[KING | plr]);
+    square_t kingSq = square(Pieces[KING | plr]);
 
 	//TODO add heuristics
 	bitboard checkedBy = kingIsAttackedBy<plr>(occ, kingSq);
@@ -884,31 +912,30 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		if (plr==white){
 			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
 			attacking[0] <<= 7;
-			attacking[0] &= notfile0 & lastRank_w;
 			attacking[1] &= nPinnedPawn | filled::mainDiag[kingMD];
 			attacking[1] <<= 9;
-			attacking[1] &= notfile7 & lastRank_w;
 		} else {
 			attacking[0] &= nPinnedPawn | filled::mainDiag[kingMD];
 			attacking[0] >>= 9;
-			attacking[0] &= notfile0 & lastRank_b;
 			attacking[1] &= nPinnedPawn | filled::antiDiag[kingAD];
 			attacking[1] >>= 7;
-			attacking[1] &= notfile7 & lastRank_b;
 		}
+        attacking[0] &= notfile0;
+        attacking[1] &= notfile7;
+
+        bitboard attacking_last[2] = {attacking[0] & sqmask<plr>::lastRank, 
+                                    attacking[1] & sqmask<plr>::lastRank};
 
 		for (int captured : opCapturables){
 			int scoreD = - Value::piece[PAWN | plr] - Value::piece[captured];
             int diff = (plr==white) ? 7 : -9;
-			for (bitboard attacktarget: attacking){
-				bitboard tmp = attacktarget & Pieces[captured];
-
-                for (const bitboard& to: squares(tmp)){
+            for (const bitboard& attacktarget: attacking_last){
+                for (const bitboard& to: squares(attacktarget & Pieces[captured])){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
-					bitboard tf = to | from;
-					unsigned long int toSq = square(to);
+					bitboard tf    = to | from;
+					square_t toSq  = square(to);
 
-					Zobrist toggle = zobrist::keys[captured][toSq];
+					Zobrist toggle = zobrist::keys[ captured ][toSq     ];
 					toggle        ^= zobrist::keys[PAWN | plr][toSq-diff];
 
 					auto toggleGroupMove = [this, toggle, captured, to, tf, from](){
@@ -920,7 +947,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					};
 
 					toggleGroupMove();
-					for (int prom: promo){
+					for (const int& prom: promo){
 						scoreD += Value::piece[prom];
 
 						auto toggleMove = [this, toggle, prom, to, toSq](){
@@ -941,37 +968,24 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			}
 		}
 
-		attacking[0] = attacking[1] = Pieces[PAWN | plr];
-		if (plr==white){
-			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
-			attacking[0] <<= 7;
-			attacking[0] &= notfile0 & notlastRank_w;
-			attacking[1] &= nPinnedPawn | filled::mainDiag[kingMD];
-			attacking[1] <<= 9;
-			attacking[1] &= notfile7 & notlastRank_w;
-		} else {
-			attacking[0] &= nPinnedPawn | filled::mainDiag[kingMD];
-			attacking[0] >>= 9;
-			attacking[0] &= notfile0 & notlastRank_b;
-			attacking[1] &= nPinnedPawn | filled::antiDiag[kingAD];
-			attacking[1] >>= 7;
-			attacking[1] &= notfile7 & notlastRank_b;
-		}
+        bitboard attacking_notlast[2] = {attacking[0] & sqmask<plr>::notlastRank, 
+                                    attacking[1] & sqmask<plr>::notlastRank};
 
         for (int captured : opCapturables){
             int scoreGD = Value::piece[captured];
             pieceScore -= scoreGD;
 
             int diff = (plr==white) ? 7 : -9;
-            for (bitboard attacktarget: attacking){
+            for (bitboard attacktarget: attacking_notlast){
 				bitboard tmp = attacktarget & Pieces[captured];
                 for (const bitboard& to: squares(tmp)){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
-					bitboard tf = to | from;
-					unsigned long int toSq = square(to);
-					Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
-					toggle ^= zobrist::keys[PAWN | plr][toSq-diff];
-					toggle ^= zobrist::keys[captured][toSq];
+					bitboard tf     = to | from;
+					square_t toSq   = square(to);
+
+					Zobrist toggle  = zobrist::keys[PAWN | plr][toSq];
+					toggle         ^= zobrist::keys[PAWN | plr][toSq-diff];
+					toggle         ^= zobrist::keys[captured][toSq];
 
 					auto toggleMove = [this, toggle, tf, to, captured](){
 						Pieces[PAWN | plr] ^= tf;
@@ -992,7 +1006,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		}
 
         int diff = (plr==white) ? 7 : -9;
-        for (bitboard attacktarget: attacking){
+        for (bitboard attacktarget: attacking_notlast){
 			if ((attacktarget & tmpEnPassant) != 0){
 				bitboard tf = tmpEnPassant;
 				bitboard cp = tmpEnPassant;
@@ -1003,7 +1017,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					tf |= tmpEnPassant << -diff;
 					cp <<= 8;
 				}
-				unsigned long int toSq = square(tmpEnPassant);
+				square_t toSq = square(tmpEnPassant);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
 				toggle ^= zobrist::keys[PAWN |   plr ][toSq-diff];
 				toggle ^= zobrist::keys[PAWN | (!plr)][toSq+((plr==white)?-8:8)];
@@ -1034,9 +1048,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			tmp &= empty;
 			pieceScore -= Value::piece[PAWN | plr];
             for (const bitboard& to: squares(tmp)){
-				bitboard from = (plr == white) ? (to >> 8) : (to << 8);
-				bitboard tf = to | from;
-				unsigned long int toSq = square(to);
+				bitboard from   = (plr == white) ? (to >> 8) : (to << 8);
+				bitboard tf     = to | from;
+				square_t toSq   = square(to);
 
 				auto toggleGroupMove = [this, tf, toSq, from](){
 					All_Pieces(plr)    ^= tf;
@@ -1067,15 +1081,15 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 #endif
 		struct move_data{
 			//bitboard frombb;
-			bitboard attack;
-			unsigned int fromSq;
+            bitboard attack;
+            square_t fromSq;
 			unsigned int piecet;
 		} dt[SIZE];
 		static_assert(sizeof(move_data) == 128/8, "move_data size");
-		unsigned long int n(0);
+		unsigned int n(0);
 #undef SIZE
 
-		unsigned long int firstRook, firstQueen;
+		unsigned int firstRook, firstQueen;
 		{ 												//TargetSquareGenerator:
 			//TODO Only knights that are not pinned can move, so tmp's population is predictable from here
             for (const bitboard& frombb: squares(Pieces[KNIGHT | plr])){
@@ -1127,15 +1141,15 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		if (!(castling & castlingrights[plr])){
 			for (int captured: opCapturables){
 				pieceScore -= Value::piece[captured];
-				for (unsigned long int i = 0 ; i < n ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+				for (unsigned int i = 0 ; i < n ; ++i) {
+                    square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
+						bitboard tf         = to | (UINT64_C(1) << fromSq);
+						square_t toSq       = square(to);
 						unsigned int mpiece = dt[i].piecet;
-						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[mpiece][toSq];
-						toggle ^= zobrist::keys[mpiece][fromSq];
+						Zobrist toggle      = zobrist::keys[captured][toSq];
+						toggle             ^= zobrist::keys[mpiece][toSq];
+						toggle             ^= zobrist::keys[mpiece][fromSq];
 
 						auto toggleMove = [this, toggle, tf, to, captured, mpiece](){
 							Pieces[captured] ^= to;
@@ -1151,8 +1165,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				}
                 for (const bitboard& to: squares(Pieces[captured] & KAttack)){
-					unsigned long int nkSq = square(to);
-					bitboard tf = to | Pieces[KING | plr];
+                    square_t nkSq   = square(to);
+                    bitboard tf     = to | Pieces[KING | plr];
 
 					auto toggleGroupMove = [this, to, tf, captured](){
 						Pieces[captured]   ^= to;
@@ -1180,14 +1194,14 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			}
 			if (mode < quiescenceMask){
 				halfmoves = oldhm + 1;
-				for (unsigned long int i = 0 ; i < n ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+                for (unsigned int i = 0 ; i < n ; ++i) {
+                    square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(dt[i].attack & empty)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						unsigned int mpiece = dt[i].piecet;
-						Zobrist toggle = zobrist::keys[mpiece][toSq];
-						toggle        ^= zobrist::keys[mpiece][fromSq];
+                        bitboard tf         = to | (UINT64_C(1) << fromSq);
+                        square_t toSq       = square(to);
+                        unsigned int mpiece = dt[i].piecet;
+                        Zobrist toggle      = zobrist::keys[mpiece][toSq];
+                        toggle             ^= zobrist::keys[mpiece][fromSq];
 
 						auto toggleMove = [this, toggle, tf, mpiece](){
 							All_Pieces(plr) ^= tf;
@@ -1200,8 +1214,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				}
                 for (const bitboard& to: squares(KAttack & empty)){
-					unsigned long int nkSq = square(to);
-					bitboard tf = to | Pieces[KING | plr];
+                    square_t nkSq   = square(to);
+                    bitboard tf     = to | Pieces[KING | plr];
 
 					auto toggleGroupMove = [this, tf](){
 						Pieces[KING | plr] ^= tf;
@@ -1209,8 +1223,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					};
 					toggleGroupMove();
 					if (validPosition<plr>(nkSq)){
-						Zobrist toggle = zobrist::keys[KING | plr][kingSq];
-						toggle ^= zobrist::keys[KING | plr][nkSq];
+                        Zobrist toggle  = zobrist::keys[KING | plr][kingSq];
+                        toggle         ^= zobrist::keys[KING | plr][nkSq];
 						
 						auto toggleMove = [this, toggle](){
 							zobr ^= toggle;
@@ -1228,14 +1242,14 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				unsigned int i = 0;
 				pieceScore -= Value::piece[captured];
 				for (; i < firstRook ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+                    square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						unsigned int mpiece = dt[i].piecet;
-						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle        ^= zobrist::keys[mpiece][toSq];
-						toggle        ^= zobrist::keys[mpiece][fromSq];
+                        bitboard tf         = to | (UINT64_C(1) << fromSq);
+                        square_t toSq       = square(to);
+                        unsigned int mpiece = dt[i].piecet;
+                        Zobrist toggle      = zobrist::keys[captured][toSq];
+                        toggle             ^= zobrist::keys[mpiece][toSq];
+                        toggle             ^= zobrist::keys[mpiece][fromSq];
 
 						auto toggleMove = [this, toggle, captured, to, tf, mpiece](){
 							Pieces[captured] ^= to;
@@ -1250,9 +1264,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				}
 				for ( ; i < firstQueen ; ++i){
-					unsigned int fromSq = dt[i].fromSq;
-					bitboard toggleCastling = castling & (bitboard(1)<<fromSq);
-					key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+                    square_t fromSq         = dt[i].fromSq;
+                    bitboard toggleCastling = castling & (bitboard(1)<<fromSq);
+                    key ct2                 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 					
 					auto toggleGroupMove = [this, toggleCastling, ct2](){
 						castling ^= toggleCastling;
@@ -1261,19 +1275,19 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 					toggleGroupMove();
                     for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[ROOK | plr][toSq];
-						toggle ^= zobrist::keys[ROOK | plr][fromSq];
+                        bitboard tf     = to | (UINT64_C(1) << fromSq);
+                        square_t toSq   = square(to);
+                        Zobrist toggle  = zobrist::keys[ captured ][toSq];
+                        toggle         ^= zobrist::keys[ROOK | plr][toSq];
+                        toggle         ^= zobrist::keys[ROOK | plr][fromSq];
 
-						auto toggleMove = [this, toggle, captured, to, tf](){
-							Pieces[captured]   ^= to;
-							Pieces[ROOK | plr] ^= tf;
-							All_Pieces( plr)   ^= tf;
-							All_Pieces(!plr)   ^= to;
-							zobr ^= toggle;
-						};
+                        auto toggleMove = [this, toggle, captured, to, tf](){
+                            Pieces[captured]   ^= to;
+                            Pieces[ROOK | plr] ^= tf;
+                            All_Pieces( plr)   ^= tf;
+                            All_Pieces(!plr)   ^= to;
+                            zobr               ^= toggle;
+                        };
 
 						internal_move smove(tf);
 						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, toggleGroupMove, Value::piece[captured])) return sst.score;
@@ -1281,21 +1295,21 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					toggleGroupMove();
 				}
 				for (; i < n ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+					square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(Pieces[captured] & dt[i].attack)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[captured][toSq];
-						toggle ^= zobrist::keys[QUEEN | plr][toSq];
-						toggle ^= zobrist::keys[QUEEN | plr][fromSq];
+                        bitboard tf     = to | (UINT64_C(1) << fromSq);
+                        square_t toSq   = square(to);
+                        Zobrist toggle  = zobrist::keys[ captured  ][toSq];
+                        toggle         ^= zobrist::keys[QUEEN | plr][toSq];
+                        toggle         ^= zobrist::keys[QUEEN | plr][fromSq];
 
-						auto toggleMove = [this, toggle, captured, to, tf](){
-							Pieces[captured] ^= to;
-							Pieces[QUEEN | plr] ^= tf;
-							All_Pieces(plr) ^= tf;
-							All_Pieces(!plr) ^= to;
-							zobr ^= toggle;
-						};
+                        auto toggleMove = [this, toggle, captured, to, tf](){
+                            Pieces[captured]       ^= to;
+                            Pieces[QUEEN | plr]    ^= tf;
+                            All_Pieces( plr)       ^= tf;
+                            All_Pieces(!plr)       ^= to;
+                            zobr                   ^= toggle;
+                        };
 
 						internal_move smove(tf);
 						if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, Value::piece[captured])) return sst.score;
@@ -1304,8 +1318,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
                 for (const bitboard& to: squares(Pieces[captured] & KAttack)){
-					unsigned long int nkSq = square(to);
-					bitboard tf = to | Pieces[KING | plr];
+                    square_t nkSq   = square(to);
+                    bitboard tf     = to | Pieces[KING | plr];
 
 					auto toggleGroupMove = [this, to, tf, captured, ct2, toggleCastling](){
 						Pieces[captured]   ^= to;
@@ -1390,13 +1404,13 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 				unsigned int i = 0;
 				for (; i < firstRook ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+                    square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(dt[i].attack & empty)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						unsigned int mpiece = dt[i].piecet;
-						Zobrist toggle = zobrist::keys[mpiece][toSq];
-						toggle ^= zobrist::keys[mpiece][fromSq];
+                        bitboard tf         = to | (UINT64_C(1) << fromSq);
+                        square_t toSq       = square(to);
+                        unsigned int mpiece = dt[i].piecet;
+                        Zobrist toggle      = zobrist::keys[mpiece][toSq];
+                        toggle             ^= zobrist::keys[mpiece][fromSq];
 
 						auto toggleMove = [this, toggle, tf, mpiece](){
 							All_Pieces(plr) ^= tf;
@@ -1409,9 +1423,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					}
 				}
 				for (; i < firstQueen ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
-					bitboard toggleCastling = castling & (UINT64_C(1)<<fromSq);
-					key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+                    square_t fromSq         = dt[i].fromSq;
+                    bitboard toggleCastling = castling & (UINT64_C(1)<<fromSq);
+                    key ct2                 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 					
 					auto toggleGroupMove = [this, toggleCastling, ct2](){
 						zobr     ^= ct2;
@@ -1419,10 +1433,10 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					};
 					toggleGroupMove();
                     for (const bitboard& to: squares(dt[i].attack & empty)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[ROOK | plr][toSq];
-						toggle        ^= zobrist::keys[ROOK | plr][fromSq];
+						bitboard tf     = to | (UINT64_C(1) << fromSq);
+						square_t toSq   = square(to);
+						Zobrist toggle  = zobrist::keys[ROOK | plr][toSq];
+						toggle         ^= zobrist::keys[ROOK | plr][fromSq];
 
 						auto toggleMove = [this, toggle, tf](){
 							All_Pieces(plr)    ^= tf;
@@ -1436,12 +1450,12 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					toggleGroupMove();
 				}
 				for (; i < n ; ++i) {
-					unsigned int fromSq = dt[i].fromSq;
+					square_t fromSq = dt[i].fromSq;
                     for (const bitboard& to: squares(dt[i].attack & empty)){
-						bitboard tf = to | (UINT64_C(1) << fromSq);
-						unsigned long int toSq = square(to);
-						Zobrist toggle = zobrist::keys[QUEEN | plr][toSq];
-						toggle ^= zobrist::keys[QUEEN | plr][fromSq];
+                        bitboard tf     = to | (UINT64_C(1) << fromSq);
+                        square_t toSq   = square(to);
+                        Zobrist toggle  = zobrist::keys[QUEEN | plr][toSq];
+                        toggle         ^= zobrist::keys[QUEEN | plr][fromSq];
 
 						auto toggleMove = [this, toggle, tf](){
 							All_Pieces(plr)     ^= tf;
@@ -1457,8 +1471,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				key ct2 = ct ^ zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 				
                 for (const bitboard& to: squares(KAttack & empty)){
-					bitboard tf = to | Pieces[KING | plr];
-					unsigned long int nkSq = square(to);
+                    bitboard tf     = to | Pieces[KING | plr];
+                    square_t nkSq   = square(to);
 
 					auto toggleGroupMove = [this, tf, toggleCastling, ct2](){
 						Pieces[KING | plr] ^= tf;
@@ -1488,12 +1502,10 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			bitboard tmp = pawnsToForward;
 			if (plr == white){
 				tmp <<= 8;
-				tmp &= notlastRank_w;
 			} else {
 				tmp >>= 8;
-				tmp &= notlastRank_b;
 			}
-			tmp &= empty;
+            tmp &= sqmask<plr>::notlastRank & empty;
             for (const bitboard& to: squares(tmp)){
                 bitboard tf = to;
 				if (plr == white){
@@ -1501,9 +1513,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				} else {
 					tf |= (to << 8);
 				}
-				unsigned long int toSq = square(to);
+                square_t toSq = square(to);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
-				toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
+				toggle        ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-8:8)];
 
 				auto toggleMove = [this, toggle, tf](){
 					All_Pieces(plr)    ^= tf;
@@ -1514,20 +1526,20 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				internal_move smove(tf, PAWN | plr);
 				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, 0)) return sst.score;
 			}
-			tmp = pawnsToForward;
-			if (plr == white){
-				tmp = ( ( ( ( tmp & pstartRank_w ) << 8 ) & empty ) << 8 ) & empty;
-			} else {
-				tmp = ( ( ( ( tmp & pstartRank_b ) >> 8 ) & empty ) >> 8 ) & empty;
-			}
+			tmp = pawnsToForward & sqmask<plr>::pstartRank;
+            if (plr == white){
+                tmp = ( ( ( tmp << 8 ) & empty ) << 8 ) & empty;
+            } else {
+                tmp = ( ( ( tmp >> 8 ) & empty ) >> 8 ) & empty;
+            }
             for (const bitboard& to: squares(tmp)){
 				bitboard toggleEnPassant((plr==white) ? (to >> 8) : (to << 8));
 				bitboard tf(to | ((plr == white) ? (to >> 16) : (to << 16)));
-				unsigned int toSq  = square(to);
-				unsigned int tmpSq = square(toggleEnPassant);
-				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
-				toggle ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
-				toggle ^= zobrist::enPassant[7&tmpSq];
+                square_t toSq   = square(to);
+                square_t tmpSq  = square(toggleEnPassant);
+                Zobrist toggle  = zobrist::keys[PAWN | plr][toSq];
+                toggle         ^= zobrist::keys[PAWN | plr][toSq+((plr==white)?-16:16)];
+                toggle         ^= zobrist::enPassant[7&tmpSq];
 
 				auto toggleMove = [this, toggle, tf, toggleEnPassant](){
 					All_Pieces(plr)    ^= tf;
@@ -1544,7 +1556,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 		if (!( checkedBy & (checkedBy - 1) )){
 			//1) Capturing the attacking piece
-			unsigned long int toSq = square(checkedBy);
+			square_t toSq = square(checkedBy);
 			int attacker = QUEEN | (!plr);
 			while (!(Pieces[attacker] & checkedBy)) attacker -= 2;
 
@@ -1561,7 +1573,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					bitboard att = (plr == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &= notFilled::file[f] & Pieces[PAWN | plr];
 					if (att){
-						assert(!(att & (att-1)));
+                        ASSUME(!(att & (att-1)));
 						bitboard tf = checkedBy | att;
 
 						auto togglePartial2Move = [this, tf](){
@@ -1601,9 +1613,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 							};
 							togglePartial2Move();
 							if (validPositionNonChecked<plr>(kingSq)){
-								unsigned long int toenpsq = square(tmpEnPassant);
-								Zobrist toggle = zobrist::keys[PAWN | plr][toenpsq];
-								toggle ^= zobrist::keys[PAWN | plr][toenpsq - diff];
+                                square_t toenpsq    = square(tmpEnPassant);
+                                Zobrist toggle      = zobrist::keys[PAWN | plr][toenpsq];
+                                toggle             ^= zobrist::keys[PAWN | plr][toenpsq - diff];
 
 								auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
 									togglePartialMove();
@@ -1673,7 +1685,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				togglePartial2Move();
 
 				if (validPositionNonChecked<plr>(kingSq)){
-					unsigned long int fromSq = square(from);
+                    square_t fromSq = square(from);
 					Zobrist toggle = zobrist::keys[KNIGHT | plr][fromSq];
 					toggle        ^= zobrist::keys[KNIGHT | plr][toSq];
 
@@ -1700,9 +1712,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				};
 				togglePartial2Move();
 				if (validPositionNonChecked<plr>(kingSq)){
-					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[BISHOP | plr][fromSq];
-					toggle        ^= zobrist::keys[BISHOP | plr][toSq];
+                    square_t fromSq = square(from);
+                    Zobrist toggle  = zobrist::keys[BISHOP | plr][fromSq];
+                    toggle         ^= zobrist::keys[BISHOP | plr][toSq];
 
 					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
 						togglePartialMove();
@@ -1729,11 +1741,11 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				};
 				togglePartial2Move();
 				if (validPositionNonChecked<plr>(kingSq)){
-					bitboard toggleCastling = castling & from;
-					unsigned long int fromSq = square(from);
-					Zobrist toggle = zobrist::keys[ROOK | plr][fromSq];
-					toggle        ^= zobrist::keys[ROOK | plr][toSq];
-					toggle ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+                    bitboard toggleCastling = castling & from;
+                    square_t fromSq         = square(from);
+                    Zobrist toggle          = zobrist::keys[ROOK | plr][fromSq];
+                    toggle                 ^= zobrist::keys[ROOK | plr][toSq];
+                    toggle                 ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 
 					auto toggleGroupMove = [togglePartialMove, togglePartial2Move](){
 						togglePartialMove();
@@ -1781,8 +1793,8 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			togglePartialMove();
 			//2) Block it if it is a ray piece
 			//ray is a subset of empty
-			unsigned long int tmpSq = square(Pieces[KING | plr]);
-			bitboard ray = rays[tmpSq][toSq];
+            square_t tmpSq  = square(Pieces[KING | plr]);
+            bitboard ray    = rays[tmpSq][toSq];
 			/**
 			 * FIXME bug
 			 *
@@ -1818,8 +1830,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			 **/
 #ifdef HYPERPOSITION
 			if ((ray & tmpEnPassant) != 0){
-				unsigned long int tmpSq2;
-				square(&tmpSq2, tmpEnPassant);
+                square_t tmpSq2 = square(tmpEnPassant);
 				bitboard attacker, cp = tmpEnPassant;
 				if (plr == white){
 					cp >>= 8;
@@ -1973,7 +1984,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 			halfmoves = oldhm + 1;
             for (const bitboard& from: squares(Pieces[KNIGHT | plr])){
-				unsigned long int fromSq = square(from);
+                square_t fromSq = square(from);
                 for (const bitboard& to: squares(ray & KnightMoves[fromSq])){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
@@ -1998,7 +2009,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 			}
             for (const bitboard& from: squares(Pieces[BISHOP | plr])){
-				unsigned long int fromSq = square(from);
+                square_t fromSq = square(from);
                 for (const bitboard& to: squares(ray & bishopAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
@@ -2025,7 +2036,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			//Rooks in corners can not get into ray, so changing castling rights is useless
 			//as rooks will never be in a position where they have castling right.
             for (const bitboard& from: squares(Pieces[ROOK | plr])){
-				unsigned long int fromSq = square(from);
+                square_t fromSq = square(from);
                 for (const bitboard& to: squares(ray & rookAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
@@ -2050,7 +2061,7 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 				}
 			}
             for (const bitboard& from: squares(Pieces[QUEEN | plr])){
-				unsigned long int fromSq = square(from);
+                square_t fromSq = square(from);
                 for (const bitboard& to: squares(ray & queenAttacks(occ, fromSq))){
 					bitboard tf = to | from;
 					auto toggleGroupMove = [this, tf](){
@@ -2076,14 +2087,14 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 			}
 		}
 		//3) Move the king
-		halfmoves = 0;
-		bitboard from = Pieces[KING | plr];
-		unsigned long int fromSq = square(from);
-		bitboard mv = KingMoves[fromSq];
-		bitboard tmp1 = mv;
-		key ct = zobrist::castling[(castling*castlingsmagic)>>60];
+		halfmoves               = 0;
+		bitboard from           = Pieces[KING | plr];
+        square_t fromSq         = square(from);
+		bitboard mv             = KingMoves[fromSq];
+		bitboard tmp1           = mv;
+		key ct                  = zobrist::castling[(castling*castlingsmagic)>>60];
 		bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
-		ct ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
+		ct                     ^= zobrist::castling[((castling^toggleCastling)*castlingsmagic)>>60];
 		for (int attacker: opCapturables){
             for (const bitboard& to: squares(Pieces[attacker] & tmp1)){
 				kingSq      = square(to);
@@ -2246,8 +2257,8 @@ template<color plr> inline unsigned int Board::getMove(bitboard tf, int prom) __
 	ASSUME(prom < (TTMove_EnPassantPromFlag << 1));
 	ASSUME((tf & All_Pieces(plr)) != bitboard(0));
 	ASSUME((tf & (~All_Pieces(plr))) != bitboard(0));
-	unsigned long int fromSq = square(tf &   All_Pieces(plr) );
-	unsigned long int toSq   = square(tf & (~All_Pieces(plr)));
+    square_t fromSq = square(tf &   All_Pieces(plr) );
+    square_t toSq   = square(tf & (~All_Pieces(plr)));
 	ASSUME(0 <= fromSq && fromSq < 64);
 	ASSUME(0 <= toSq && toSq < 64);
 	if (tf & Pieces[PAWN | plr]) {
@@ -2267,7 +2278,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		moving &= Pieces[PAWN | plr] >> 8;
 	}
 	bitboard moving2 = moving;
-	unsigned long int kingSq = square(Pieces[KING | plr]);
+    square_t kingSq = square(Pieces[KING | plr]);
     for (const bitboard& to: squares(moving)){
 		bitboard tf = to | ((plr == white) ? (to >> 8) : (to << 8));
 		if (validPosition<plr>(occ ^ tf, kingSq)) return false;
@@ -2426,7 +2437,7 @@ template<color plr> int Board::getEvaluation(int depth) __restrict{
 	 * Mate in 1 :
 	 * 8/8/pppppppK/NBBR1NRp/nbbrqnrP/PPPPPPPk/8/Q7 w - - 0 1
 	 */
-	unsigned long int kingSqW, kingSqB;
+    square_t kingSqW, kingSqB;
 	((plr == white) ? kingSqW : kingSqB) = square(Pieces[KING | plr]);
 	if (stalemate<plr>()){
 		if (validPosition<plr>(((plr == white) ? kingSqW : kingSqB))) return 0; //stalemate
@@ -2489,7 +2500,7 @@ constexpr bitboard Board::queenAttacks(bitboard occ, const int sq){
 	return rookAttacks(occ, sq) | bishopAttacks(occ, sq);
 }
 
-template<color plr> inline void Board::filterAttackBB(bitboard occ, unsigned long int sq, bitboard &attack, int kingSq) __restrict{
+template<color plr> inline void Board::filterAttackBB(bitboard occ, square_t sq, bitboard &attack, int kingSq) __restrict{
 	int dr = direction[kingSq][sq];
 	bitboard ray = rays[kingSq][sq];
 	if (dr != WRONG_PIECE && (ray & occ) == bitboard(0)){
@@ -2515,7 +2526,7 @@ template<color plr> inline bitboard Board::getNPinnedPawns(bitboard occ, int kin
 	return (~pinnedPawns);
 }
 
-template<color plr> inline bitboard Board::getChecker(bitboard occ, unsigned long int sq, int kingSq) __restrict{
+template<color plr> inline bitboard Board::getChecker(bitboard occ, square_t sq, int kingSq) __restrict{
 	occ &= XRayOFCMask[kingSq][sq];
 	occ *= XRayOFCMagic[kingSq][sq];
 	occ >>= 64 - maxCheckAvoidanceShiftBits;
