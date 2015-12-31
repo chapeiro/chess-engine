@@ -2,7 +2,7 @@ DEBUGFLAGS= -g3 -pg -ggdb
 # DEBUGFLAGS+= -funsafe-loop-optimizations
 # DEBUGFLAGS+= -Wunsafe-loop-optimizations
 
-# CXX = g++-5
+CXX = g++-4.9
 
 TFLAGS= -O3 
 TFLAGS+= -finline 

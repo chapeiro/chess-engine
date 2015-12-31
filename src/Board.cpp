@@ -272,9 +272,9 @@ void Board::make(chapeiro::move m){
 				updatePieces(from, i);
 				updatePieces(to, i);
 				if ((i&(~colormask))==ROOK && (filled::normal[from] & castling) != 0){
-						zobr ^= zobrist::castling[(castling*castlingsmagic)>>60];
+                        zobr ^= zobrist::castling_key(castling);
 						castling ^= filled::normal[from];
-						zobr ^= zobrist::castling[(castling*castlingsmagic)>>60];
+                        zobr ^= zobrist::castling_key(castling);
 				}/** else if ((i^(~colormask)) == KING){
 					if (playing==white){
 						kingSq[white] = square(to);
