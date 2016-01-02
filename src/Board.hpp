@@ -116,6 +116,10 @@ static constexpr bitboard lastRank      = (plr == white) ? lastRank_w       : la
 static constexpr bitboard notlastRank   = (plr == white) ? notlastRank_w    : notlastRank_b;
 // static constexpr bitboard notfile0 = ~fd_file(0);//notFilled::file[0];
 // static constexpr bitboard notfile7 = ~fd_file(7);//notFilled::file[7];
+static constexpr bitboard notFileL      = (plr == white) ? notfile0         : notfile7;
+static constexpr bitboard notFileR      = sqmask<!plr>::notFileL;
+static constexpr unsigned int distFL    = (plr == white) ? 9                : -9;
+static constexpr unsigned int distFR    = (plr == white) ? 7                : -7;
 static constexpr bitboard pnextRank     = (plr == white) ? pnextRank_w      : pnextRank_b;
 static constexpr bitboard dfRank        = (plr == white) ? dfRank_w         : dfRank_b;
 static constexpr bitboard pstartRank    = (plr == white) ? pstartRank_w     : pstartRank_b;
@@ -131,6 +135,25 @@ inline constexpr bitboard shift_backward(const bitboard& b){
     return shift_forward<!plr>(b);
 }
 
+template<color plr>
+inline constexpr bitboard shift_fw_left_unsafe(const bitboard& b){
+    return (plr == white) ? (b << 9) : (b >> 9);
+}
+
+template<color plr>
+inline constexpr bitboard shift_bw_left_unsafe(const bitboard& b){
+    return shift_fw_left_unsafe<!plr>(b);
+}
+
+template<color plr>
+inline constexpr bitboard shift_fw_right_unsafe(const bitboard& b){
+    return (plr == white) ? (b << 7) : (b >> 7);
+}
+
+template<color plr>
+inline constexpr bitboard shift_bw_right_unsafe(const bitboard& b){
+    return shift_fw_right_unsafe<!plr>(b);
+}
 
 // template<color plr> constexpr bitboard lastRank = 0;
 // template<> constexpr bitboard lastRank<white> = lastRank_w;
@@ -448,11 +471,10 @@ template<color plr> bitboard Board::kingIsAttackedBy(bitboard occ, int kingSq) _
 	bitboard attackers = KnightMoves[kingSq] & Pieces[KNIGHT | (!plr)];
 	attackers |= rookAttacks  (occ, kingSq) & (Pieces[ROOK   | (!plr)] | Pieces[QUEEN | (!plr)]);
 	attackers |= bishopAttacks(occ, kingSq) & (Pieces[BISHOP | (!plr)] | Pieces[QUEEN | (!plr)]);
-	if (plr == black){
-		attackers |= (((Pieces[KING | plr] >> 7) & notfile7) | ((Pieces[KING | plr] >> 9) & notfile0)) & Pieces[PAWN | white];
-	} else {
-		attackers |= (((Pieces[KING | plr] << 9) & notfile7) | ((Pieces[KING | plr] << 7) & notfile0)) & Pieces[PAWN | black];
-	}
+    attackers |= (
+                    (shift_fw_right_unsafe<plr>(Pieces[KING | plr]) & sqmask<plr>::notFileL) | 
+                    (shift_fw_left_unsafe<plr>(Pieces[KING | plr]) & sqmask<plr>::notFileR)
+                ) & Pieces[PAWN | !plr];
 	return attackers;
 }
 
@@ -472,14 +494,9 @@ template<color plr> inline bool Board::notAttacked(bitboard target, int targetSq
 template<color plr> inline bool Board::notAttacked(bitboard target, bitboard occ, int targetSq) __restrict{
 	ASSUME((target & (target-1))==0);
 	ASSUME(targetSq >= 0 && targetSq < 64);
-	if (plr == black){
-		if ( (Pieces[PAWN | black] >> 7) & target & notfile7) return false;
-		if ( (Pieces[PAWN | black] >> 9) & target & notfile0) return false;
-	} else {
-		if ( (Pieces[PAWN | white] << 7) & target & notfile0) return false;
-		if ( (Pieces[PAWN | white] << 9) & target & notfile7) return false;
-	}
-	if (Pieces[KNIGHT | plr] & KnightMoves[targetSq]) return false;
+    if (shift_fw_right_unsafe<plr>(Pieces[PAWN | plr]) & target & sqmask<plr>::notFileL) return false;
+    if (shift_fw_left_unsafe<plr>( Pieces[PAWN | plr]) & target & sqmask<plr>::notFileR) return false;
+    if (Pieces[KNIGHT | plr] & KnightMoves[targetSq]) return false;
 	if (Pieces[KING   | plr] & KingMoves[targetSq]  ) return false;
 	bitboard att = Pieces[BISHOP | plr] | Pieces[QUEEN | plr];
 	if (att & bishopAttacks(occ, targetSq)) return false;
@@ -842,7 +859,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 									capturedPos = killerTo;
 									capturedSq = killerToSq;
 								}
-							} else if ((tmpEnPassant == ((plr == white) ? (killerTo >> 8) : (killerTo << 8)))
+							} else if ((tmpEnPassant == shift_backward<plr>(killerTo))
 									&& (Pieces[PAWN | (!plr)] & tmpEnPassant)
 									&& ((All_Pieces(plr) & killerTo) == 0)){
 								capturedPos = tmpEnPassant;
@@ -929,26 +946,21 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 		kingFL ^= 7;
 		int kingMD = kingFL+kingRK;	//7-(kingFL^7)+kingRK
 
-		if (plr==white){
-			attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
-			attacking[0] <<= 7;
-			attacking[1] &= nPinnedPawn | filled::mainDiag[kingMD];
-			attacking[1] <<= 9;
-		} else {
-			attacking[0] &= nPinnedPawn | filled::mainDiag[kingMD];
-			attacking[0] >>= 9;
-			attacking[1] &= nPinnedPawn | filled::antiDiag[kingAD];
-			attacking[1] >>= 7;
-		}
-        attacking[0] &= notfile0;
-        attacking[1] &= notfile7;
+        attacking[0] &= nPinnedPawn | filled::antiDiag[kingAD];
+        attacking[1] &= nPinnedPawn | filled::mainDiag[kingMD];
+
+        attacking[0] = shift_fw_right_unsafe<plr>(attacking[0]);
+        attacking[1] = shift_fw_left_unsafe<plr>( attacking[1]);
+
+        attacking[0] &= sqmask<plr>::notFileL;
+        attacking[1] &= sqmask<plr>::notFileR;
 
         bitboard attacking_last[2] = {attacking[0] & sqmask<plr>::lastRank, 
                                     attacking[1] & sqmask<plr>::lastRank};
 
 		for (int captured : opCapturables){
 			int scoreD = - Value::piece[PAWN | plr] - Value::piece[captured];
-            int diff = (plr==white) ? 7 : -9;
+            int diff = sqmask<plr>::distFR;
             for (const bitboard& attacktarget: attacking_last){
                 for (const bitboard& to: squares(attacktarget & Pieces[captured])){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
@@ -984,7 +996,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					toggleGroupMove();
 				}
 
-                diff += 2;
+                diff = sqmask<plr>::distFL;
 			}
 		}
 
@@ -995,10 +1007,9 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
             int scoreGD = Value::piece[captured];
             pieceScore -= scoreGD;
 
-            int diff = (plr==white) ? 7 : -9;
+            int diff = sqmask<plr>::distFR;
             for (bitboard attacktarget: attacking_notlast){
-				bitboard tmp = attacktarget & Pieces[captured];
-                for (const bitboard& to: squares(tmp)){
+                for (const bitboard& to: squares(attacktarget & Pieces[captured])){
 					bitboard from((plr==white)?(to >> diff):(to << -diff));
 					bitboard tf     = to | from;
 					square_t toSq   = square(to);
@@ -1020,22 +1031,20 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, 0, [](){}, scoreGD)) return sst.score;
 				}
 
-                diff += 2;
+                diff = sqmask<plr>::distFL;
 			}
 			pieceScore += scoreGD;
 		}
 
-        int diff = (plr==white) ? 7 : -9;
+        int diff = sqmask<plr>::distFR;
         for (bitboard attacktarget: attacking_notlast){
 			if ((attacktarget & tmpEnPassant) != 0){
 				bitboard tf = tmpEnPassant;
-				bitboard cp = tmpEnPassant;
+                bitboard cp = shift_backward<plr>(tmpEnPassant);
 				if (plr == white){
 					tf |= tmpEnPassant >> diff;
-					cp >>= 8;
 				} else {
 					tf |= tmpEnPassant << -diff;
-					cp <<= 8;
 				}
 				square_t toSq = square(tmpEnPassant);
 				Zobrist toggle = zobrist::keys[PAWN | plr][toSq];
@@ -1052,7 +1061,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 				internal_move smove(tf,  PAWN | plr | TTMove_EnPassantPromFlag);
 				if (deeper<mode, plr, root>(smove, oldhm, tmpEnPassant, sst, toggleMove, -Value::piece[PAWN | (!plr)], [](){}, 0)) return sst.score;
 			}
-            diff += 2;
+            diff = sqmask<plr>::distFL;
 		}
 
 		bitboard empty = ~occ;
@@ -1566,7 +1575,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 			togglePartialMove();
 
 			pieceScore -= Value::piece[attacker];
-			if ((checkedBy & (plr==white?lastRank_w:lastRank_b)) == 0){
+            if ((checkedBy & sqmask<plr>::lastRank) == 0){
 				for (int diff = (plr==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
 					bitboard att = (plr == white) ? (checkedBy >> diff) : (checkedBy << -diff);
 					att &= notFilled::file[f] & Pieces[PAWN | plr];
@@ -1598,7 +1607,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 						togglePartial2Move();
 					}
 				}
-				if (((plr==white)?(checkedBy<<8):(checkedBy>>8)) == tmpEnPassant){
+                if (shift_forward<plr>(checkedBy) == tmpEnPassant){
 					for (int diff = (plr==white?7:-9), f = 7 ; f >= 0 ; diff += 2, f -= 7){
 						bitboard att = (plr == white) ? (tmpEnPassant >> diff) : (tmpEnPassant << -diff);
 						att &=  notFilled::file[f] & Pieces[PAWN | plr];
@@ -1829,9 +1838,9 @@ perft fen 8/8/8/2k5/4Pp2/8/8/1K4Q1 b - e3 0 2 results : D1 6; D2 145; D3 935; D4
 #ifdef HYPERPOSITION
 			if ((ray & tmpEnPassant) != 0){
                 square_t tmpSq2 = square(tmpEnPassant);
-                bitboard attacker;
                 biboard cp = shift_backward<plr>(tmpEnPassant);
 				for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
+                    bitboard attacker;
 					if (plr == white){
 						attacker = tmpEnPassant >> diff;
 					} else {
@@ -2332,32 +2341,26 @@ template<color plr> bool Board::stalemate() __restrict{
 			}
 		}
 	}
-	bitboard attacking[2];
-	if (plr==white){
-		attacking[0] = notfile0 & (Pieces[PAWN | plr] << 7);
-		attacking[1] = notfile7 & (Pieces[PAWN | plr] << 9);
-	} else {
-		attacking[0] = notfile0 & (Pieces[PAWN | plr] >> 9);
-		attacking[1] = notfile7 & (Pieces[PAWN | plr] >> 7);
-	}
+    bitboard attacking[2] = {sqmask<plr>::notFileL, sqmask<plr>::notFileR};
+    attacking[0] &= shift_fw_right_unsafe<plr>(Pieces[PAWN | plr]);
+    attacking[1] &= shift_fw_left_unsafe<plr>( Pieces[PAWN | plr]);
+
     for (const int& captured : capturables){
-		for (int diff = ((plr==white)?7:-9), at = 0; at < 2 ; diff += 2, ++at){
-            for (const bitboard& to: squares(attacking[at] & Pieces[captured])){
+        int diff = sqmask<plr>::distFR;
+        for (const bitboard& attacktarget: attacking){
+            for (const bitboard& to: squares(attacktarget & Pieces[captured])){
 				from = (plr == white) ? (to >> diff) : (to << -diff);
 				Pieces[captured] ^= to;
 				bool res = validPosition<plr>(occ ^ from, kingSq);
 				Pieces[captured] ^= to;
 				if (res) return false;
 			}
+            diff = sqmask<plr>::distFL;
 		}
 	}
 	if (enPassant){
         bitboard moving = Pieces[PAWN | plr];
-		if (plr == white){
-            moving &= (enPassant >> 9) | (enPassant >> 7);
-		} else {
-            moving &= (enPassant << 9) | (enPassant << 7);
-		}
+        moving &= shift_bw_left_unsafe<plr>(enPassant) | shift_bw_right_unsafe<plr>(enPassant);
         for (const bitboard& from: squares(moving)){
             bitboard cpt = shift_backward<plr>(enPassant);
             Pieces[PAWN | !plr] ^= cpt;

@@ -22,6 +22,7 @@ TFLAGS+= -ftracer
 TFLAGS+= -funroll-loops
 TFLAGS+= -fwhole-program
 TFLAGS+= -flto
+# TFLAGS+= -g3 -pg -ggdb 
 
 # DEBUGFLAGS+=$(TFLAGS)
 OPTFLAGS= $(TFLAGS)
@@ -29,7 +30,7 @@ OPTFLAGS+= -DNDEBUG
 
 INCLUDE_PATH=-I. 
 
-CXXFLAGS= -Wl,--no-as-needed -lpthread -pthread -std=c++14 -Wall -D_GNU_SOURCE 
+CXXFLAGS= -Wl,--no-as-needed -lpthread -pthread -std=c++14 -Wall -D_GNU_SOURCE -fdiagnostics-color
 
 CXXFLAGS+= $(INCLUDE_PATH)
 
