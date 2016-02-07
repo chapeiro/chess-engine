@@ -216,6 +216,21 @@ public:
     static constexpr square_t kingSqBefore          = square(KSCKT & QSCKT);
     static constexpr square_t kingSqAfterKSC        = square(KSCKT & ~QSCKT);
     static constexpr square_t kingSqAfterQSC        = square(QSCKT & ~KSCKT);
+
+    static constexpr square_t rookSqBeforeKSC       = square(KingSide );
+    static constexpr square_t rookSqBeforeQSC       = square(QueenSide);
+    static constexpr square_t rookSqAfterKSC        = square(KingSide  ^ KSCRT);
+    static constexpr square_t rookSqAfterQSC        = square(QueenSide ^ QSCRT);
+
+    static constexpr Zobrist  ztoggleQSC            = zobrist::keys[ROOK | plr][rookSqBeforeQSC] ^
+                                                        zobrist::keys[ROOK | plr][rookSqAfterQSC ] ^
+                                                        zobrist::keys[KING | plr][kingSqBefore   ] ^
+                                                        zobrist::keys[KING | plr][kingSqAfterQSC ];
+
+    static constexpr Zobrist  ztoggleKSC            = zobrist::keys[ROOK | plr][rookSqBeforeKSC] ^
+                                                        zobrist::keys[ROOK | plr][rookSqAfterKSC ] ^
+                                                        zobrist::keys[KING | plr][kingSqBefore   ] ^
+                                                        zobrist::keys[KING | plr][kingSqAfterKSC ];
 };
 constexpr bitboard castlingsmagic    = 0x1040000000000041ull;//0x8100000000000081ull;
 constexpr bitboard allcastlingrights = ~castlingc<white>::deactrights | ~castlingc<black>::deactrights;
@@ -287,7 +302,7 @@ class Board { //cache_align
 		int fullmoves;
 		bitboard castling;
 		//Memory
-		Zobrist history[256];
+		Zobrist history[512];
 		int lastHistoryEntry;
 		unsigned int thread_id;
 
@@ -494,6 +509,14 @@ template<color plr> inline bool Board::notAttacked(bitboard target, int targetSq
 template<color plr> inline bool Board::notAttacked(bitboard target, bitboard occ, int targetSq) __restrict{
 	ASSUME((target & (target-1))==0);
 	ASSUME(targetSq >= 0 && targetSq < 64);
+    // bitboard tmp = shift_fw_right_unsafe<plr>(Pieces[PAWN | plr]) & target & sqmask<plr>::notFileL;
+    // tmp |= shift_fw_left_unsafe<plr>( Pieces[PAWN | plr]) & target & sqmask<plr>::notFileR;
+    // tmp |= Pieces[KNIGHT | plr] & KnightMoves[targetSq];
+    // tmp |= Pieces[KING   | plr] & KingMoves[  targetSq];
+    // // if (tmp) return false;
+    // tmp |= (Pieces[BISHOP | plr] | Pieces[QUEEN | plr]) & bishopAttacks(occ, targetSq);
+    // tmp |= (Pieces[ROOK   | plr] | Pieces[QUEEN | plr]) & rookAttacks(  occ, targetSq);
+    // return !tmp;
     if (shift_fw_right_unsafe<plr>(Pieces[PAWN | plr]) & target & sqmask<plr>::notFileL) return false;
     if (shift_fw_left_unsafe<plr>( Pieces[PAWN | plr]) & target & sqmask<plr>::notFileR) return false;
     if (Pieces[KNIGHT | plr] & KnightMoves[targetSq]) return false;
@@ -750,15 +773,12 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 
 						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
 						
-						Zobrist toggle = zobrist::keys[KING | plr][3+((plr==black)?56:0)];
-                        toggle ^= zobrist::castling_key(castling);
-                        toggle ^= zobrist::castling_key(castling^toggleCastling);
+                        Zobrist toggle  = zobrist::castling_key(castling);
+                        toggle         ^= zobrist::castling_key(castling^toggleCastling);
 						
 						if (killerFrom > killerTo) {
 							if ((castling & castlingc<plr>::KingSide & Pieces[ROOK | plr]) && ((castlingc<plr>::KingSideSpace & occ) == 0)){
-								toggle ^= zobrist::keys[ROOK | plr][0+((plr==black)?56:0)];
-								toggle ^= zobrist::keys[ROOK | plr][2+((plr==black)?56:0)];
-								toggle ^= zobrist::keys[KING | plr][1+((plr==black)?56:0)];
+                                toggle ^= castlingc<plr>::ztoggleKSC;
 								auto toggleMove = [this, toggle, toggleCastling](){
 									Pieces[KING | plr] ^= castlingc<plr>::KSCKT;
 									Pieces[ROOK | plr] ^= castlingc<plr>::KSCRT;
@@ -776,9 +796,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 							}
 						} else {
 							if ((castling & castlingc<plr>::QueenSide & Pieces[ROOK | plr]) && ((castlingc<plr>::QueenSideSpace & occ) == 0)){
-								toggle ^= zobrist::keys[ROOK | plr][7+((plr==black)?56:0)];
-								toggle ^= zobrist::keys[ROOK | plr][4+((plr==black)?56:0)];
-								toggle ^= zobrist::keys[KING | plr][5+((plr==black)?56:0)];
+                                toggle ^= castlingc<plr>::ztoggleQSC;
 								auto toggleMove = [this, toggle, toggleCastling](){
 									Pieces[KING | plr] ^= castlingc<plr>::QSCKT;
 									Pieces[ROOK | plr] ^= castlingc<plr>::QSCRT;
@@ -1380,10 +1398,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					toggleGroupMove();
 					if (validPosition<plr>(castlingc<plr>::kingSqAfterKSC)){
 						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
-						Zobrist toggle = zobrist::keys[ROOK | plr][0+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[ROOK | plr][2+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[KING | plr][3+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[KING | plr][1+((plr==black)?56:0)];
+                        Zobrist toggle = castlingc<plr>::ztoggleKSC;
 						toggle ^= ct;
                         toggle ^= zobrist::castling_key(castling^toggleCastling);
 
@@ -1406,10 +1421,7 @@ template<SearchMode mode, color plr, bool root> int Board::search(int alpha, int
 					toggleGroupMove();
 					if (validPosition<plr>(castlingc<plr>::kingSqAfterQSC)){
 						bitboard toggleCastling = castling & ~castlingc<plr>::deactrights;
-						Zobrist toggle = zobrist::keys[ROOK | plr][7+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[ROOK | plr][4+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[KING | plr][3+((plr==black)?56:0)];
-						toggle ^= zobrist::keys[KING | plr][5+((plr==black)?56:0)];
+                        Zobrist toggle = castlingc<plr>::ztoggleQSC;
 						toggle ^= ct;
                         toggle ^= zobrist::castling_key(castling^toggleCastling);
 
@@ -2282,7 +2294,7 @@ template<color plr> bool Board::stalemate() __restrict{
 	}
 	occ ^= from;
     for (const bitboard& from: squares(Pieces[KNIGHT | plr])){
-        bitboard att = KnightMoves[square(from)];
+        bitboard att = attacks<KNIGHT>(occ, square(from));
         for (const bitboard& to: squares(empty & att)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
@@ -2297,7 +2309,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		}
 	}
     for (const bitboard& from: squares(Pieces[BISHOP | plr])){
-		att = bishopAttacks(occ, square(from));
+        bitboard att = attacks<BISHOP>(occ, square(from));
         for (const bitboard& to: squares(empty & att)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
@@ -2312,7 +2324,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		}
 	}
     for (const bitboard& from: squares(Pieces[ROOK | plr])){
-        bitboard att = rookAttacks(occ, square(from));
+        bitboard att = attacks<ROOK>(occ, square(from));
         for (const bitboard& to: squares(empty & att)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
@@ -2327,7 +2339,7 @@ template<color plr> bool Board::stalemate() __restrict{
 		}
 	}
     for (const bitboard &from: squares(Pieces[QUEEN | plr])){
-        bitboard att = queenAttacks(occ, square(from));
+        bitboard att = attacks<QUEEN>(occ, square(from));
         for (const bitboard& to: squares(empty & att)){
 			bitboard tf = to | from;
 			if (validPosition<plr>(occ ^ tf, kingSq)) return false;
